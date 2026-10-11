@@ -306,6 +306,10 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 <script>
 'use strict';
 
+// Fallback: if CDN scripts didn't load, stub them to prevent hard crash
+if (typeof marked === 'undefined') { window.marked = { parse: s => s.replace(/\n/g, '<br>') }; }
+if (typeof DOMPurify === 'undefined') { window.DOMPurify = { sanitize: (s) => s.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/on\w+="[^"]*"/g, '') }; }
+
 // ── safe helpers ──────────────────────────────────────────────────────────────
 
 function esc(s) {
@@ -330,6 +334,7 @@ function setText(el, text) { el.textContent = String(text); }
 // ── state ─────────────────────────────────────────────────────────────────────
 let history = [];
 let campaignId = null;
+let campaignName = '';
 let sessionId = null;
 let streaming = false;
 let initialState = null;
@@ -585,9 +590,18 @@ function updatePartyStatus(state) {
 
 // ── load pre-session ──────────────────────────────────────────────────────────
 async function initPreSession() {
-  // Load campaign list
+  // Safety: always enable button within 8s regardless of what happens
+  const fallback = setTimeout(() => {
+    $('btn-begin').disabled = false;
+    if ($('pre-title').textContent === 'Loading…') setText($('pre-title'), 'Virtual DM');
+  }, 8000);
+
   try {
-    const r = await fetch('/api/campaigns');
+    // Load campaign list
+    const r = await Promise.race([
+      fetch('/api/campaigns'),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+    ]);
     const campaigns = await r.json();
     if (Array.isArray(campaigns) && campaigns.length) {
       const picker = $('campaign-picker');
@@ -596,9 +610,7 @@ async function initPreSession() {
         btn.className = 'campaign-btn';
         setText(btn, c.name);
         btn.dataset.id = c.id;
-        btn.dataset.name = c.name;
         if (!campaignId) {
-          // Select first by default
           campaignId = c.id;
           campaignName = c.name;
           btn.classList.add('selected');
@@ -613,14 +625,16 @@ async function initPreSession() {
         picker.appendChild(btn);
       }
     }
-  } catch { /* no campaigns endpoint — skip picker */ }
+  } catch (e) {
+    setText($('pre-title'), 'Virtual DM');
+    setText($('pre-scene'), `Couldn't load campaigns: ${e.message}`);
+  }
 
   if (campaignId) {
     await loadCampaignDetails(campaignId, campaignName);
-  } else {
-    setText($('pre-title'), 'Virtual DM');
-    setText($('pre-scene'), 'Set SUPABASE_URL in .env to load your campaigns.');
   }
+
+  clearTimeout(fallback);
   $('btn-begin').disabled = false;
 }
 
@@ -629,7 +643,10 @@ async function loadCampaignDetails(cid, cname) {
   setText($('pre-scene'), '');
   $('pre-party').replaceChildren();
   try {
-    const r = await fetch(`/api/state?campaign_id=${cid}`);
+    const r = await Promise.race([
+      fetch(`/api/state?campaign_id=${cid}`),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+    ]);
     initialState = await r.json();
     if (initialState.error) throw new Error(initialState.error);
     if (initialState.scene?.description) {
@@ -637,10 +654,9 @@ async function loadCampaignDetails(cid, cname) {
     } else {
       setText($('pre-scene'), 'Ready to begin.');
     }
-    const partyEl = $('pre-party');
-    partyEl.replaceChildren(...(initialState.party || []).map(makePrePC));
-  } catch {
-    setText($('pre-scene'), 'No party data yet — import characters to begin.');
+    $('pre-party').replaceChildren(...(initialState.party || []).map(makePrePC));
+  } catch (e) {
+    setText($('pre-scene'), 'No party yet — import characters to begin.');
   }
 }
 
