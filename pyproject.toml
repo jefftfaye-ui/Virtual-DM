@@ -1,0 +1,29 @@
+[project]
+name = "dm-server"
+version = "0.1.0"
+description = "AI Dungeon Master MCP server — honest dice, persistent state, SRD lookups"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.0.0,<2",
+    "httpx>=0.27",
+    "psycopg[binary,pool]>=3.2",
+    "pydantic>=2.8",
+    "python-dotenv>=1.0",
+    "charactercheck>=0.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

@@ -1,0 +1,31 @@
+# Fly.io config for dm-server.
+# Deploy: fly launch (first time) or fly deploy (subsequent)
+# Secrets: fly secrets set SUPABASE_URL=... CONNECTOR_SECRET=... SUPABASE_SERVICE_KEY=...
+
+app = "dm-server"
+primary_region = "ord"
+
+[build]
+
+[env]
+  PORT = "8080"
+  RULES_EDITION = "2014"
+  # DEFAULT_CAMPAIGN_ID set via: fly secrets set DEFAULT_CAMPAIGN_ID=...
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
