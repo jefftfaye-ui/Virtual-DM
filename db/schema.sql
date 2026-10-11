@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS rolls (
     expression      text NOT NULL,
     mode            text NOT NULL CHECK (mode IN ('normal','advantage','disadvantage')),
     source          text NOT NULL CHECK (source IN ('server','player')),
-    natural         int,
+    natural_roll    int,
     dice            jsonb NOT NULL,
     modifier        int NOT NULL DEFAULT 0,
     total           int NOT NULL,

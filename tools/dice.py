@@ -65,7 +65,7 @@ async def _roll_impl(
         """
         INSERT INTO rolls (
             campaign_id, session_id, encounter_id, actor, reason, expression, mode,
-            source, natural, dice, modifier, total, visibility, dc, outcome
+            source, natural_roll, dice, modifier, total, visibility, dc, outcome
         )
         VALUES (%s,%s,%s,%s,%s,%s,%s,'server',%s,%s::jsonb,%s,%s,%s,%s,%s)
         RETURNING id
@@ -140,7 +140,7 @@ async def record_player_roll(
             """
             INSERT INTO rolls (
                 campaign_id, session_id, encounter_id, actor, reason, expression, mode,
-                source, natural, dice, modifier, total, visibility, dc, outcome
+                source, natural_roll, dice, modifier, total, visibility, dc, outcome
             )
             VALUES (%s,%s,%s,%s,%s,'player-reported','normal','player',%s,'[]'::jsonb,0,%s,'public',%s,%s)
             RETURNING id

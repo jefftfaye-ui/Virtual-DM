@@ -41,13 +41,23 @@ from rules.statblock import (
 )
 
 # Raw GitHub URLs for 5e-bits/5e-database (5.1 SRD only)
-_BASE = "https://raw.githubusercontent.com/5e-bits/5e-database/main/src"
-_SOURCES_5E = {
-    "monster":   f"{_BASE}/5e-SRD-Monsters.json",
-    "spell":     f"{_BASE}/5e-SRD-Spells.json",
-    "condition": f"{_BASE}/5e-SRD-Conditions.json",
-    "rule":      f"{_BASE}/5e-SRD-Rules.json",
-    "item":      f"{_BASE}/5e-SRD-Equipment.json",
+_BASE_2014 = "https://raw.githubusercontent.com/5e-bits/5e-database/main/src/2014/en"
+_BASE_2024 = "https://raw.githubusercontent.com/5e-bits/5e-database/main/src/2024/en"
+_SOURCES = {
+    "2014": {
+        "monster":   f"{_BASE_2014}/5e-SRD-Monsters.json",
+        "spell":     f"{_BASE_2014}/5e-SRD-Spells.json",
+        "condition": f"{_BASE_2014}/5e-SRD-Conditions.json",
+        "rule":      f"{_BASE_2014}/5e-SRD-Rules.json",
+        "item":      f"{_BASE_2014}/5e-SRD-Equipment.json",
+    },
+    "2024": {
+        "monster":   f"{_BASE_2024}/5e-SRD-Monsters.json",
+        "spell":     f"{_BASE_2024}/5e-SRD-Spells.json",
+        "condition": f"{_BASE_2024}/5e-SRD-Conditions.json",
+        "rule":      f"{_BASE_2024}/5e-SRD-Rules.json",
+        "item":      f"{_BASE_2024}/5e-SRD-Equipment.json",
+    },
 }
 _LOCAL_NAMES = {
     "monster":   "5e-SRD-Monsters.json",
@@ -163,11 +173,12 @@ def main() -> int:
             if src_path:
                 data = _load_local(src_path, _LOCAL_NAMES[kind])
             else:
-                if args.edition == "2024":
-                    print(f"  No network source for 2024 {kind} — provide --from <local dir>", file=sys.stderr)
+                url = _SOURCES.get(args.edition, {}).get(kind)
+                if not url:
+                    print(f"  No network source for {args.edition} {kind} — provide --from <local dir>", file=sys.stderr)
                     continue
                 try:
-                    data = _fetch_json(_SOURCES_5E[kind])
+                    data = _fetch_json(url)
                 except Exception as e:
                     print(f"  download failed: {e}", file=sys.stderr)
                     continue
