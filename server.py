@@ -212,6 +212,20 @@ def _get_tool_schemas() -> list:
 
 # ─── UI handler ───────────────────────────────────────────────────────────────
 
+async def campaigns_handler(request: Request) -> Response:
+    try:
+        from db import repo as _repo
+        async with _repo.tx() as conn:
+            rows = await _repo.fetchall(
+                conn,
+                "SELECT id, name, edition, current_scene FROM campaigns WHERE active=true ORDER BY created_at",
+            )
+        campaigns = [{"id": str(r["id"]), "name": r["name"], "edition": r["edition"], "scene": r.get("current_scene")} for r in rows]
+        return Response(json.dumps(campaigns, default=str), media_type="application/json")
+    except Exception as e:
+        return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
+
+
 async def ui_handler(request: Request) -> HTMLResponse:
     path = Path(__file__).parent / "ui" / "index.html"
     if not path.exists():
@@ -332,6 +346,7 @@ _mcp_inner = mcp.streamable_http_app()
 app = Starlette(
     routes=[
         Route("/ui", endpoint=ui_handler),
+        Route("/api/campaigns", endpoint=campaigns_handler),
         Route("/api/state", endpoint=state_handler),
         Route("/api/chat", endpoint=chat_handler, methods=["POST", "OPTIONS"]),
         Mount(MOUNT_PATH, app=_mcp_inner),

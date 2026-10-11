@@ -73,6 +73,14 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .pre-pc-fill { height: 100%; border-radius: 2px; background: var(--hp-full); }
 .pre-pc-nums { font-size: 0.7rem; color: var(--text-3); }
 
+.campaign-btn {
+  font-size: 0.78rem; font-weight: 500; padding: 8px 18px; border-radius: var(--r);
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-2);
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.campaign-btn:hover { border-color: var(--copper-dim); color: var(--text); }
+.campaign-btn.selected { border-color: var(--copper); color: var(--copper); background: var(--copper-glow); }
+
 .btn-begin {
   font-size: 0.8rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
   background: transparent; border: 1px solid var(--copper); color: var(--copper);
@@ -231,6 +239,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 <!-- ── pre-session ───────────────────────────────────── -->
 <div id="pre-session">
   <p class="pre-eyebrow">Virtual DM</p>
+  <div id="campaign-picker" style="display:flex;gap:10px;margin-bottom:32px;flex-wrap:wrap;justify-content:center"></div>
   <h1 class="pre-campaign-name" id="pre-title">Loading…</h1>
   <p class="pre-scene" id="pre-scene"></p>
   <div class="pre-party-row" id="pre-party"></div>
@@ -576,26 +585,63 @@ function updatePartyStatus(state) {
 
 // ── load pre-session ──────────────────────────────────────────────────────────
 async function initPreSession() {
+  // Load campaign list
   try {
-    const r = await fetch('/api/state');
+    const r = await fetch('/api/campaigns');
+    const campaigns = await r.json();
+    if (Array.isArray(campaigns) && campaigns.length) {
+      const picker = $('campaign-picker');
+      for (const c of campaigns) {
+        const btn = document.createElement('button');
+        btn.className = 'campaign-btn';
+        setText(btn, c.name);
+        btn.dataset.id = c.id;
+        btn.dataset.name = c.name;
+        if (!campaignId) {
+          // Select first by default
+          campaignId = c.id;
+          campaignName = c.name;
+          btn.classList.add('selected');
+        }
+        btn.addEventListener('click', () => {
+          campaignId = c.id;
+          campaignName = c.name;
+          picker.querySelectorAll('.campaign-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          loadCampaignDetails(c.id, c.name);
+        });
+        picker.appendChild(btn);
+      }
+    }
+  } catch { /* no campaigns endpoint — skip picker */ }
+
+  if (campaignId) {
+    await loadCampaignDetails(campaignId, campaignName);
+  } else {
+    setText($('pre-title'), 'Virtual DM');
+    setText($('pre-scene'), 'Set SUPABASE_URL in .env to load your campaigns.');
+  }
+  $('btn-begin').disabled = false;
+}
+
+async function loadCampaignDetails(cid, cname) {
+  setText($('pre-title'), cname);
+  setText($('pre-scene'), '');
+  $('pre-party').replaceChildren();
+  try {
+    const r = await fetch(`/api/state?campaign_id=${cid}`);
     initialState = await r.json();
     if (initialState.error) throw new Error(initialState.error);
-
-    setText($('pre-title'), 'Stormwreck Isle');
-
     if (initialState.scene?.description) {
       setText($('pre-scene'), initialState.scene.description);
     } else {
-      setText($('pre-scene'), 'The world awaits.');
+      setText($('pre-scene'), 'Ready to begin.');
     }
-
     const partyEl = $('pre-party');
     partyEl.replaceChildren(...(initialState.party || []).map(makePrePC));
   } catch {
-    setText($('pre-title'), 'Virtual DM');
-    setText($('pre-scene'), 'Set SUPABASE_URL and DEFAULT_CAMPAIGN_ID in .env to load your campaign.');
+    setText($('pre-scene'), 'No party data yet — import characters to begin.');
   }
-  $('btn-begin').disabled = false;
 }
 
 // ── session start ─────────────────────────────────────────────────────────────
@@ -606,7 +652,7 @@ async function beginSession() {
   $('pre-session').classList.add('hidden');
   $('game').classList.remove('hidden');
 
-  setText($('cb-name'), 'Stormwreck Isle');
+  setText($('cb-name'), campaignName || 'Campaign');
   if (initialState) updatePartyStatus(initialState);
 
   await sendToDM('system',
