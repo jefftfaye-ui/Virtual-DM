@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual DM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:           oklch(11% 0.010 55);
+  --surface:      oklch(15% 0.012 55);
+  --surface-2:    oklch(19% 0.013 55);
+  --surface-3:    oklch(24% 0.014 55);
+  --copper:       oklch(62% 0.130 52);
+  --copper-light: oklch(72% 0.110 52);
+  --copper-dim:   oklch(42% 0.090 52);
+  --copper-glow:  oklch(62% 0.130 52 / 0.12);
+  --text:         oklch(91% 0.008 55);
+  --text-2:       oklch(68% 0.008 55);
+  --text-3:       oklch(48% 0.008 55);
+  --text-dm:      oklch(90% 0.011 58);
+  --border:       oklch(22% 0.011 55);
+  --border-sub:   oklch(17% 0.009 55);
+  --hp-full:      oklch(64% 0.140 155);
+  --hp-mid:       oklch(68% 0.130 90);
+  --hp-low:       oklch(64% 0.130 42);
+  --hp-crit:      oklch(56% 0.130 22);
+  --hp-zero:      oklch(38% 0.080 22);
+  --font-n: 'EB Garamond', Garamond, Georgia, serif;
+  --font-u: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --r: 4px;
+}
+
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-u); font-size: 15px; }
+
+/* ── pre-session ─────────────────────────────────────── */
+#pre-session {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 48px 24px;
+}
+#pre-session.hidden { display: none; }
+
+.pre-eyebrow {
+  font-size: 0.7rem; font-weight: 500; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--copper); margin-bottom: 20px;
+}
+.pre-campaign-name {
+  font-family: var(--font-n); font-size: clamp(2.2rem, 5vw, 3.4rem);
+  font-weight: 500; color: var(--text); text-align: center;
+  line-height: 1.15; margin-bottom: 32px;
+}
+.pre-scene {
+  font-family: var(--font-n); font-size: 1.05rem; font-style: italic;
+  color: var(--text-2); max-width: 56ch; text-align: center;
+  line-height: 1.7; margin-bottom: 40px;
+}
+.pre-party-row { display: flex; gap: 20px; margin-bottom: 40px; flex-wrap: wrap; justify-content: center; }
+.pre-pc {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 14px 20px; min-width: 140px;
+}
+.pre-pc-name { font-size: 0.85rem; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+.pre-pc-meta { font-size: 0.72rem; color: var(--text-3); margin-bottom: 10px; }
+.pre-pc-track { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin-bottom: 4px; }
+.pre-pc-fill { height: 100%; border-radius: 2px; background: var(--hp-full); }
+.pre-pc-nums { font-size: 0.7rem; color: var(--text-3); }
+
+.btn-begin {
+  font-size: 0.8rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
+  background: transparent; border: 1px solid var(--copper); color: var(--copper);
+  padding: 13px 36px; border-radius: var(--r); cursor: pointer; transition: background 0.18s, color 0.18s;
+}
+.btn-begin:hover { background: var(--copper); color: var(--bg); }
+.btn-begin:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── main layout ─────────────────────────────────────── */
+#game {
+  display: grid;
+  grid-template-columns: 1fr 272px;
+  grid-template-rows: 44px 1fr auto;
+  height: 100vh; overflow: hidden;
+}
+#game.hidden { display: none; }
+
+#campaign-bar {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 12px;
+  padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+}
+.cb-name { font-family: var(--font-n); font-size: 0.9rem; font-weight: 500; color: var(--text); flex: 1; }
+.cb-scene { color: var(--text-3); max-width: 40ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cb-session { display: flex; align-items: center; gap: 6px; color: var(--copper); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; font-size: 0.68rem; }
+.cb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--copper); animation: pulse-dot 2.4s ease-in-out infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+#narrative {
+  grid-column: 1; grid-row: 2; overflow-y: auto; padding: 36px 48px 24px; scroll-behavior: smooth;
+}
+#narrative::-webkit-scrollbar { width: 4px; }
+#narrative::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
+
+.dm-block {
+  font-family: var(--font-n); font-size: 1.1rem; color: var(--text-dm);
+  line-height: 1.82; max-width: 64ch; margin-bottom: 24px;
+}
+.dm-block p { margin-bottom: 0.8em; }
+.dm-block p:last-child { margin-bottom: 0; }
+.dm-block strong { font-weight: 600; color: var(--text); }
+.dm-block em { font-style: italic; }
+.dm-block h1,.dm-block h2,.dm-block h3 { font-size: 1rem; font-weight: 600; color: var(--text); margin: 1.2em 0 0.5em; }
+.dm-block ul,.dm-block ol { padding-left: 1.4em; margin-bottom: 0.8em; }
+.dm-block li { margin-bottom: 0.2em; }
+.dm-block.streaming::after { content:'▋'; color:var(--copper); animation:blink .9s step-end infinite; margin-left:1px; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+.player-block { display: flex; gap: 10px; align-items: baseline; margin-bottom: 16px; max-width: 64ch; }
+.player-label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--copper-dim); white-space: nowrap; min-width: 42px; }
+.player-text { font-family: var(--font-n); font-size: 1rem; color: var(--text-2); line-height: 1.65; }
+
+.tool-event { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-3); margin-bottom: 10px; max-width: 64ch; }
+.te-icon { color: var(--copper-dim); }
+.te-roll { font-weight: 600; color: var(--text-2); }
+.te-hp-down { font-weight: 500; color: var(--hp-crit); }
+.te-hp-up { font-weight: 500; color: var(--hp-full); }
+
+.thinking { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-3); margin-bottom: 16px; }
+.thinking-dots span { display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: var(--copper-dim); margin-right: 3px; animation: t-bounce 1.2s ease-in-out infinite; }
+.thinking-dots span:nth-child(2) { animation-delay: .2s; }
+.thinking-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes t-bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-4px)} }
+
+/* ── sidebar ─────────────────────────────────────────── */
+#party-status {
+  grid-column: 2; grid-row: 2 / 4; background: var(--surface); border-left: 1px solid var(--border);
+  overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 0;
+}
+#party-status::-webkit-scrollbar { width: 3px; }
+#party-status::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
+
+.s-label { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3); margin-bottom: 12px; margin-top: 4px; }
+.s-div { height: 1px; background: var(--border-sub); margin: 12px 0; }
+
+/* PC cards */
+.pc-card { margin-bottom: 20px; }
+.pc-identity { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.pc-name-el { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+.pc-class-el { font-size: 0.68rem; color: var(--text-3); }
+.hp-outer { position: relative; margin-bottom: 3px; }
+.hp-track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.hp-fill { height: 100%; border-radius: 3px; transition: width .5s cubic-bezier(.25,.46,.45,.94), background .5s; }
+.hp-nums { font-size: 0.68rem; color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; margin-bottom: 5px; }
+.cond-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+.cond-pill { font-size: 0.62rem; font-weight: 500; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 2px; background: oklch(45% .12 42 / .18); color: oklch(72% .10 42); border: 1px solid oklch(45% .12 42 / .3); }
+.cond-conc { background: oklch(45% .13 52 / .15); color: var(--copper); border-color: oklch(45% .13 52 / .3); font-style: italic; }
+.ds-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.ds-lbl { font-size: 0.62rem; color: var(--text-3); }
+.ds-pips { display: flex; gap: 3px; }
+.ds-pip { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--border); background: transparent; }
+.ds-pip.s { background: var(--hp-full); border-color: var(--hp-full); }
+.ds-pip.f { background: var(--hp-crit); border-color: var(--hp-crit); }
+.slots-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.slot-g { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.slot-lvl { font-size: 0.56rem; color: var(--text-3); }
+.slot-pips { display: flex; gap: 2px; }
+.slot-pip { width: 6px; height: 6px; border-radius: 50%; background: var(--copper); opacity: .9; }
+.slot-pip.used { background: var(--surface-3); opacity: .5; }
+
+/* encounter */
+.enc-round { font-size: 0.68rem; color: var(--text-3); margin-bottom: 8px; }
+.c-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: var(--r); margin-bottom: 2px; font-size: 0.78rem; }
+.c-row.active { background: var(--copper-glow); color: var(--text); outline: 1px solid oklch(62% .13 52 / .3); }
+.c-row.dead { opacity: .35; }
+.c-row.fled { opacity: .35; font-style: italic; }
+.c-init { font-size: 0.68rem; font-variant-numeric: tabular-nums; color: var(--text-3); min-width: 20px; text-align: right; }
+.c-name { flex: 1; }
+.c-hp { font-size: 0.68rem; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* quests / clocks */
+.q-item { margin-bottom: 8px; }
+.q-title-el { font-size: 0.78rem; font-weight: 500; color: var(--text-2); margin-bottom: 2px; }
+.q-status { display: inline-block; font-size: 0.6rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; background: var(--surface-2); color: var(--text-3); }
+.q-status.active { background: oklch(62% .13 52 / .15); color: var(--copper); }
+.cl-item { margin-bottom: 10px; }
+.cl-name-el { font-size: 0.75rem; color: var(--text-2); margin-bottom: 4px; }
+.cl-track { display: flex; gap: 3px; }
+.cl-seg { flex: 1; height: 6px; border-radius: 1px; background: var(--surface-2); transition: background .4s; }
+.cl-seg.filled { background: var(--copper); }
+
+/* ── player strip ────────────────────────────────────── */
+#player-strip {
+  grid-column: 1; grid-row: 3; display: grid; grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--border); background: var(--surface);
+}
+.pia { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.pia:first-child { border-right: 1px solid var(--border-sub); }
+.pia-tag { font-size: 0.65rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--copper-dim); }
+.inp-row { display: flex; align-items: flex-end; gap: 6px; }
+.player-ta {
+  flex: 1; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); color: var(--text); font-family: var(--font-u);
+  font-size: 0.85rem; padding: 8px 12px; resize: none; min-height: 38px; max-height: 100px;
+  line-height: 1.45; outline: none; transition: border-color .15s; field-sizing: content;
+}
+.player-ta::placeholder { color: var(--text-3); }
+.player-ta:focus { border-color: oklch(62% .13 52 / .5); }
+.player-ta:disabled { opacity: .4; cursor: not-allowed; }
+.btn-i {
+  width: 36px; height: 36px; border-radius: var(--r); background: var(--surface-3);
+  border: 1px solid var(--border); color: var(--text-3); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: all .15s; font-size: 1rem;
+}
+.btn-i:hover { border-color: var(--copper-dim); color: var(--copper); }
+.btn-i:disabled { opacity: .35; cursor: not-allowed; }
+.btn-i.send { background: var(--copper-glow); border-color: oklch(62% .13 52 / .35); color: var(--copper); }
+.btn-i.send:hover { background: var(--copper); color: var(--bg); }
+.btn-i.mic-active { background: oklch(55% .14 22 / .2); border-color: oklch(55% .14 22 / .4); color: oklch(65% .14 22); animation: mic-ring 1.4s ease-in-out infinite; }
+@keyframes mic-ring { 0%,100%{box-shadow:0 0 0 0 oklch(55% .14 22 / .3)} 50%{box-shadow:0 0 0 5px oklch(55% .14 22 / 0)} }
+</style>
+</head>
+<body>
+
+<!-- ── pre-session ───────────────────────────────────── -->
+<div id="pre-session">
+  <p class="pre-eyebrow">Virtual DM</p>
+  <h1 class="pre-campaign-name" id="pre-title">Loading…</h1>
+  <p class="pre-scene" id="pre-scene"></p>
+  <div class="pre-party-row" id="pre-party"></div>
+  <button class="btn-begin" id="btn-begin" disabled>Begin Session</button>
+</div>
+
+<!-- ── game ─────────────────────────────────────────── -->
+<div id="game" class="hidden">
+  <header id="campaign-bar">
+    <span class="cb-name" id="cb-name"></span>
+    <span class="cb-scene" id="cb-scene"></span>
+    <span class="cb-session">
+      <span class="cb-dot"></span>
+      Session <span id="cb-sess-num">1</span>
+    </span>
+  </header>
+
+  <main id="narrative"></main>
+
+  <aside id="party-status">
+    <p class="s-label">Party</p>
+    <div id="pc-list"></div>
+
+    <div id="enc-section" style="display:none">
+      <div class="s-div"></div>
+      <p class="s-label">Encounter</p>
+      <p class="enc-round">Round <strong id="enc-round">1</strong></p>
+      <div id="c-list"></div>
+    </div>
+
+    <div id="quest-section" style="display:none">
+      <div class="s-div"></div>
+      <p class="s-label">Quests</p>
+      <div id="q-list"></div>
+    </div>
+
+    <div id="clock-section" style="display:none">
+      <div class="s-div"></div>
+      <p class="s-label">Clocks</p>
+      <div id="cl-list"></div>
+    </div>
+  </aside>
+
+  <div id="player-strip">
+    <div class="pia">
+      <span class="pia-tag">Jeff</span>
+      <div class="inp-row">
+        <textarea class="player-ta" placeholder="Say or do something…" rows="1" id="ta-jeff"></textarea>
+        <button class="btn-i" id="mic-jeff" title="Speak">🎤</button>
+        <button class="btn-i send" id="send-jeff" title="Send (Enter)">↑</button>
+      </div>
+    </div>
+    <div class="pia">
+      <span class="pia-tag">Julee</span>
+      <div class="inp-row">
+        <textarea class="player-ta" placeholder="Say or do something…" rows="1" id="ta-julee"></textarea>
+        <button class="btn-i" id="mic-julee" title="Speak">🎤</button>
+        <button class="btn-i send" id="send-julee" title="Send (Enter)">↑</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── safe helpers ──────────────────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+function safeMarkdown(md) {
+  // DOMPurify sanitizes the marked HTML output before it touches the DOM
+  return DOMPurify.sanitize(marked.parse(md), {
+    ALLOWED_TAGS: ['p','strong','em','b','i','ul','ol','li','h1','h2','h3','br','code','pre','blockquote'],
+    ALLOWED_ATTR: [],
+  });
+}
+
+function setText(el, text) { el.textContent = String(text); }
+
+// ── state ─────────────────────────────────────────────────────────────────────
+let history = [];
+let campaignId = null;
+let sessionId = null;
+let streaming = false;
+let initialState = null;
+
+// ── elements ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const narrative = $('narrative');
+
+// ── party rendering (DOM-based, no innerHTML with untrusted strings) ──────────
+
+function hpColor(hp, maxHp) {
+  const r = maxHp > 0 ? hp / maxHp : 0;
+  if (hp === 0) return 'var(--hp-zero)';
+  if (r > 0.5) return 'var(--hp-full)';
+  if (r > 0.25) return 'var(--hp-mid)';
+  if (r > 0) return 'var(--hp-crit)';
+  return 'var(--hp-zero)';
+}
+
+function makePrePC(pc) {
+  const ratio = pc.max_hp > 0 ? pc.hp / pc.max_hp : 0;
+  const card = document.createElement('div');
+  card.className = 'pre-pc';
+
+  const name = document.createElement('div');
+  name.className = 'pre-pc-name';
+  setText(name, pc.name);
+
+  const meta = document.createElement('div');
+  meta.className = 'pre-pc-meta';
+  setText(meta, `${pc.player_name} · ${pc.class_summary || 'Adventurer'}`);
+
+  const track = document.createElement('div');
+  track.className = 'pre-pc-track';
+  const fill = document.createElement('div');
+  fill.className = 'pre-pc-fill';
+  fill.style.width = `${ratio * 100}%`;
+  fill.style.background = hpColor(pc.hp, pc.max_hp);
+  track.appendChild(fill);
+
+  const nums = document.createElement('div');
+  nums.className = 'pre-pc-nums';
+  setText(nums, `${pc.hp} / ${pc.max_hp} HP`);
+
+  card.append(name, meta, track, nums);
+  return card;
+}
+
+function makeDeathSaves(ds) {
+  const s = ds?.successes || 0, f = ds?.failures || 0;
+  const row = document.createElement('div');
+  row.className = 'ds-row';
+
+  const lbl = document.createElement('span');
+  lbl.className = 'ds-lbl';
+  setText(lbl, 'Death saves');
+  row.appendChild(lbl);
+
+  const succPips = document.createElement('div');
+  succPips.className = 'ds-pips';
+  for (let i = 0; i < 3; i++) {
+    const pip = document.createElement('span');
+    pip.className = 'ds-pip' + (i < s ? ' s' : '');
+    succPips.appendChild(pip);
+  }
+  row.appendChild(succPips);
+
+  const sep = document.createElement('span');
+  sep.className = 'ds-lbl';
+  setText(sep, '·');
+  sep.style.margin = '0 2px';
+  row.appendChild(sep);
+
+  const failPips = document.createElement('div');
+  failPips.className = 'ds-pips';
+  for (let i = 0; i < 3; i++) {
+    const pip = document.createElement('span');
+    pip.className = 'ds-pip' + (i < f ? ' f' : '');
+    failPips.appendChild(pip);
+  }
+  row.appendChild(failPips);
+  return row;
+}
+
+function makeSlots(slots) {
+  if (!slots) return null;
+  const entries = Object.entries(slots).filter(([,v]) => v.max > 0).sort(([a],[b]) => +a - +b);
+  if (!entries.length) return null;
+  const row = document.createElement('div');
+  row.className = 'slots-row';
+  for (const [lvl, v] of entries) {
+    const g = document.createElement('div');
+    g.className = 'slot-g';
+    const l = document.createElement('div');
+    l.className = 'slot-lvl';
+    setText(l, lvl);
+    const pips = document.createElement('div');
+    pips.className = 'slot-pips';
+    for (let i = 0; i < v.max; i++) {
+      const p = document.createElement('span');
+      p.className = 'slot-pip' + (i < v.used ? ' used' : '');
+      pips.appendChild(p);
+    }
+    g.append(l, pips);
+    row.appendChild(g);
+  }
+  return row;
+}
+
+function makePC(pc) {
+  const card = document.createElement('div');
+  card.className = 'pc-card';
+  if (pc.hp === 0 && !pc.dead) card.classList.add('downed');
+
+  const identity = document.createElement('div');
+  identity.className = 'pc-identity';
+  const namEl = document.createElement('span');
+  namEl.className = 'pc-name-el';
+  setText(namEl, pc.name);
+  const clsEl = document.createElement('span');
+  clsEl.className = 'pc-class-el';
+  setText(clsEl, `${pc.class_summary || ''} · AC ${pc.ac || '?'}`);
+  identity.append(namEl, clsEl);
+
+  const hpOuter = document.createElement('div');
+  hpOuter.className = 'hp-outer';
+  const hpTrack = document.createElement('div');
+  hpTrack.className = 'hp-track';
+  const hpFill = document.createElement('div');
+  hpFill.className = 'hp-fill';
+  const ratio = pc.max_hp > 0 ? pc.hp / pc.max_hp : 0;
+  hpFill.style.width = `${ratio * 100}%`;
+  hpFill.style.background = hpColor(pc.hp, pc.max_hp);
+  hpTrack.appendChild(hpFill);
+  hpOuter.appendChild(hpTrack);
+
+  const hpNums = document.createElement('div');
+  hpNums.className = 'hp-nums';
+  setText(hpNums, `${pc.hp} / ${pc.max_hp}${pc.temp_hp ? ` +${pc.temp_hp}` : ''}`);
+
+  card.append(identity, hpOuter, hpNums);
+
+  // conditions
+  const conds = [...(pc.conditions || [])];
+  if (pc.concentrating_on) conds.push(`Conc: ${pc.concentrating_on}`);
+  if (conds.length) {
+    const condList = document.createElement('div');
+    condList.className = 'cond-list';
+    for (const c of conds) {
+      const pill = document.createElement('span');
+      pill.className = 'cond-pill' + (c.startsWith('Conc:') ? ' cond-conc' : '');
+      setText(pill, c);
+      condList.appendChild(pill);
+    }
+    card.appendChild(condList);
+  }
+
+  // death saves
+  if (pc.hp === 0 && !pc.dead && !pc.stable) {
+    card.appendChild(makeDeathSaves(pc.death_saves));
+  }
+
+  // spell slots
+  const slotsEl = makeSlots(pc.spell_slots);
+  if (slotsEl) card.appendChild(slotsEl);
+
+  return card;
+}
+
+function updatePartyStatus(state) {
+  // PCs
+  const pcList = $('pc-list');
+  pcList.replaceChildren(...(state.party || []).map(makePC));
+
+  // Encounter
+  const enc = state.encounter;
+  const encSec = $('enc-section');
+  if (enc) {
+    encSec.style.display = '';
+    setText($('enc-round'), enc.round);
+    const cList = $('c-list');
+    cList.replaceChildren(...(enc.combatants || []).map((c, i) => {
+      const row = document.createElement('div');
+      const active = i === enc.turn_index;
+      row.className = 'c-row' + (active ? ' active' : '') + (c.status === 'dead' ? ' dead' : c.status === 'fled' ? ' fled' : '');
+      const init = document.createElement('span');
+      init.className = 'c-init';
+      setText(init, c.initiative ?? '—');
+      const nam = document.createElement('span');
+      nam.className = 'c-name';
+      setText(nam, c.name);
+      const hp = document.createElement('span');
+      hp.className = 'c-hp';
+      setText(hp, `${c.hp}/${c.max_hp}`);
+      row.append(init, nam, hp);
+      return row;
+    }));
+  } else {
+    encSec.style.display = 'none';
+  }
+
+  // Quests
+  const quests = (state.quests || []).filter(q => q.status !== 'done' && q.status !== 'failed');
+  const qSec = $('quest-section');
+  if (quests.length) {
+    qSec.style.display = '';
+    $('q-list').replaceChildren(...quests.map(q => {
+      const item = document.createElement('div');
+      item.className = 'q-item';
+      const t = document.createElement('div');
+      t.className = 'q-title-el';
+      setText(t, q.title);
+      const s = document.createElement('span');
+      s.className = 'q-status' + (q.status === 'active' ? ' active' : '');
+      setText(s, q.status);
+      item.append(t, s);
+      return item;
+    }));
+  } else {
+    qSec.style.display = 'none';
+  }
+
+  // Clocks
+  const clocks = (state.clocks || []).filter(c => c.visible !== false);
+  const clSec = $('clock-section');
+  if (clocks.length) {
+    clSec.style.display = '';
+    $('cl-list').replaceChildren(...clocks.map(cl => {
+      const item = document.createElement('div');
+      item.className = 'cl-item';
+      const n = document.createElement('div');
+      n.className = 'cl-name-el';
+      setText(n, cl.name);
+      const track = document.createElement('div');
+      track.className = 'cl-track';
+      for (let i = 0; i < cl.segments; i++) {
+        const seg = document.createElement('div');
+        seg.className = 'cl-seg' + (i < cl.filled ? ' filled' : '');
+        track.appendChild(seg);
+      }
+      item.append(n, track);
+      return item;
+    }));
+  } else {
+    clSec.style.display = 'none';
+  }
+
+  // campaign bar scene
+  if (state.scene?.description) {
+    setText($('cb-scene'), state.scene.description);
+  }
+}
+
+// ── load pre-session ──────────────────────────────────────────────────────────
+async function initPreSession() {
+  try {
+    const r = await fetch('/api/state');
+    initialState = await r.json();
+    if (initialState.error) throw new Error(initialState.error);
+
+    setText($('pre-title'), 'Stormwreck Isle');
+
+    if (initialState.scene?.description) {
+      setText($('pre-scene'), initialState.scene.description);
+    } else {
+      setText($('pre-scene'), 'The world awaits.');
+    }
+
+    const partyEl = $('pre-party');
+    partyEl.replaceChildren(...(initialState.party || []).map(makePrePC));
+  } catch {
+    setText($('pre-title'), 'Virtual DM');
+    setText($('pre-scene'), 'Set SUPABASE_URL and DEFAULT_CAMPAIGN_ID in .env to load your campaign.');
+  }
+  $('btn-begin').disabled = false;
+}
+
+// ── session start ─────────────────────────────────────────────────────────────
+async function beginSession() {
+  $('btn-begin').disabled = true;
+  $('btn-begin').textContent = 'Starting…';
+
+  $('pre-session').classList.add('hidden');
+  $('game').classList.remove('hidden');
+
+  setText($('cb-name'), 'Stormwreck Isle');
+  if (initialState) updatePartyStatus(initialState);
+
+  await sendToDM('system',
+    'The session is beginning. Call start_session first, then greet the players in character with a vivid description of where they are right now. End with what they see or sense that demands a response.');
+}
+
+// ── narrative helpers ─────────────────────────────────────────────────────────
+let curDMEl = null;
+let curDMText = '';
+
+function appendPlayerBlock(speaker, text) {
+  finishStream();
+  const row = document.createElement('div');
+  row.className = 'player-block';
+  const lbl = document.createElement('span');
+  lbl.className = 'player-label';
+  setText(lbl, speaker);
+  const msg = document.createElement('span');
+  msg.className = 'player-text';
+  setText(msg, text);
+  row.append(lbl, msg);
+  narrative.appendChild(row);
+  scrollN();
+}
+
+function streamText(delta) {
+  if (!curDMEl) {
+    curDMEl = document.createElement('div');
+    curDMEl.className = 'dm-block streaming';
+    narrative.appendChild(curDMEl);
+  }
+  curDMText += delta;
+  curDMEl.innerHTML = safeMarkdown(curDMText);
+  curDMEl.classList.add('streaming');
+  scrollN();
+}
+
+function finishStream() {
+  if (curDMEl) {
+    curDMEl.innerHTML = safeMarkdown(curDMText);
+    curDMEl.classList.remove('streaming');
+    curDMEl = null;
+    curDMText = '';
+  }
+  removeThinking();
+}
+
+function showThinking() {
+  removeThinking();
+  const el = document.createElement('div');
+  el.className = 'thinking';
+  el.id = 'thinking-el';
+  const dots = document.createElement('div');
+  dots.className = 'thinking-dots';
+  dots.append(...[1,2,3].map(() => document.createElement('span')));
+  el.appendChild(dots);
+  narrative.appendChild(el);
+  scrollN();
+}
+
+function removeThinking() {
+  $('thinking-el')?.remove();
+}
+
+function appendToolEvent(name, result) {
+  const el = document.createElement('div');
+  el.className = 'tool-event';
+
+  const icon = document.createElement('span');
+  icon.className = 'te-icon';
+  const label = document.createElement('span');
+  const value = document.createElement('span');
+
+  if (name === 'roll') {
+    icon.textContent = '⬡';
+    setText(label, 'Roll');
+    value.className = 'te-roll';
+    const nat = result.natural ? ` (${result.natural})` : '';
+    setText(value, `${result.total}${nat}${result.outcome ? (result.outcome.success ? ' ✓' : ' ✗') : ''}`);
+  } else if (name === 'death_save') {
+    icon.textContent = result.dead ? '💀' : result.stable ? '🟢' : '🎲';
+    setText(label, 'Death save');
+    value.className = 'te-roll';
+    setText(value, `${result.natural} — ${result.message || ''}`);
+  } else if (name === 'update_character' && result.hp_after !== undefined) {
+    icon.textContent = '♥';
+    setText(label, 'HP');
+    value.className = result.dropped ? 'te-hp-down' : 'te-hp-up';
+    setText(value, String(result.hp_after));
+  } else if (name === 'start_session') {
+    if (result.session_id) sessionId = result.session_id;
+    if (result.number) setText($('cb-sess-num'), result.number);
+    return;
+  } else {
+    return; // don't surface all tool events
+  }
+
+  el.append(icon, label, value);
+  narrative.appendChild(el);
+  scrollN();
+}
+
+function scrollN() {
+  narrative.scrollTo({ top: narrative.scrollHeight, behavior: 'smooth' });
+}
+
+// ── chat ──────────────────────────────────────────────────────────────────────
+async function sendToDM(speaker, text) {
+  if (streaming) return;
+  streaming = true;
+  setDisabled(true);
+
+  const userMsg = speaker === 'system' ? text : `${speaker}: ${text}`;
+  history.push({ role: 'user', content: userMsg });
+  if (speaker !== 'system') appendPlayerBlock(speaker, text);
+  showThinking();
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: history, campaign_id: campaignId, session_id: sessionId }),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    let assistantText = '';
+
+    removeThinking();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop() || '';
+
+      for (const part of parts) {
+        if (!part.startsWith('data: ')) continue;
+        let evt;
+        try { evt = JSON.parse(part.slice(6)); } catch { continue; }
+
+        if (evt.type === 'text') {
+          assistantText += evt.delta;
+          streamText(evt.delta);
+        } else if (evt.type === 'tool_result') {
+          finishStream();
+          appendToolEvent(evt.name, evt.result || {});
+        } else if (evt.type === 'state_update') {
+          updatePartyStatus(evt.state);
+        } else if (evt.type === 'error') {
+          finishStream();
+          const errEl = document.createElement('div');
+          errEl.className = 'tool-event';
+          const errSpan = document.createElement('span');
+          errSpan.style.color = 'var(--hp-crit)';
+          setText(errSpan, `Error: ${evt.message}`);
+          errEl.appendChild(errSpan);
+          narrative.appendChild(errEl);
+        } else if (evt.type === 'done') {
+          finishStream();
+        }
+      }
+    }
+
+    if (assistantText) history.push({ role: 'assistant', content: assistantText });
+    finishStream();
+
+  } catch (e) {
+    removeThinking();
+    finishStream();
+    const errEl = document.createElement('div');
+    errEl.className = 'tool-event';
+    const errSpan = document.createElement('span');
+    errSpan.style.color = 'var(--hp-crit)';
+    setText(errSpan, `Connection error: ${String(e)}`);
+    errEl.appendChild(errSpan);
+    narrative.appendChild(errEl);
+  } finally {
+    streaming = false;
+    setDisabled(false);
+    scrollN();
+  }
+}
+
+function setDisabled(v) {
+  ['ta-jeff','ta-julee','mic-jeff','mic-julee','send-jeff','send-julee'].forEach(id => {
+    const el = $(id);
+    if (el) el.disabled = v;
+  });
+}
+
+// ── input wiring ──────────────────────────────────────────────────────────────
+function wirePlayer(player, taId, micId, sendId) {
+  const ta = $(taId), micBtn = $(micId), sendBtn = $(sendId);
+
+  const submit = () => {
+    const text = ta.value.trim();
+    if (!text || streaming) return;
+    ta.value = '';
+    sendToDM(player, text);
+  };
+
+  sendBtn.addEventListener('click', submit);
+  ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SR) {
+    const rec = new SR();
+    rec.continuous = false; rec.interimResults = false; rec.lang = 'en-US';
+    let active = false;
+
+    micBtn.addEventListener('click', () => {
+      if (active) { rec.stop(); return; }
+      try { rec.start(); active = true; micBtn.classList.add('mic-active'); micBtn.textContent = '⏹'; }
+      catch (e) { console.warn('STT error', e); }
+    });
+    rec.addEventListener('result', e => { ta.value = e.results[0][0].transcript; });
+    rec.addEventListener('end', () => { active = false; micBtn.classList.remove('mic-active'); micBtn.textContent = '🎤'; });
+    rec.addEventListener('error', () => { active = false; micBtn.classList.remove('mic-active'); micBtn.textContent = '🎤'; });
+  } else {
+    micBtn.title = 'Voice not supported — use Chrome or Edge';
+    micBtn.style.opacity = '0.3';
+  }
+}
+
+wirePlayer('Jeff',  'ta-jeff',  'mic-jeff',  'send-jeff');
+wirePlayer('Julee', 'ta-julee', 'mic-julee', 'send-julee');
+
+$('btn-begin').addEventListener('click', beginSession);
+
+initPreSession();
+</script>
+</body>
+</html>
