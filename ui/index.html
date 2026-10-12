@@ -800,6 +800,14 @@ async function beginSession() {
       }
       scrollN(true);
 
+      // If last loaded message is from the DM, the session is mid-flight —
+      // don't fire a new start_session prompt, just let players continue typing.
+      const lastMsg = currentMsgs[currentMsgs.length - 1];
+      if (lastMsg && lastMsg.role === 'assistant') {
+        setInputsDisabled(false);
+        return; // resume in place — no system trigger
+      }
+
       // Divider before new session
       const div = document.createElement('div');
       div.style.cssText = 'height:1px;background:var(--border-sub);margin:20px 0 24px;max-width:64ch;opacity:0.5';
