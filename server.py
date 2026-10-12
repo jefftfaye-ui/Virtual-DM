@@ -288,14 +288,19 @@ async def scene_image_handler(request: Request) -> Response:
     try:
         client = _openai.AsyncOpenAI()
         resp = await client.images.generate(
-            model="dall-e-3",
+            model="gpt-image-1",
             prompt=prompt,
-            size="1024x1024",
-            quality="standard",
+            size="1536x1024",  # landscape ~3:2, closest to 16:9 supported
             n=1,
         )
-        url = resp.data[0].url
-        revised = getattr(resp.data[0], "revised_prompt", None)
+        img_data = resp.data[0]
+        if getattr(img_data, "url", None):
+            url = img_data.url
+        elif getattr(img_data, "b64_json", None):
+            url = f"data:image/png;base64,{img_data.b64_json}"
+        else:
+            return Response(json.dumps({"error": "no image returned"}), media_type="application/json", status_code=500)
+        revised = getattr(img_data, "revised_prompt", None)
         return Response(json.dumps({"url": url, "revised_prompt": revised}), media_type="application/json")
     except Exception as e:
         return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
