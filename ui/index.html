@@ -756,6 +756,8 @@ async function loadCampaignDetails(cid, cname) {
 }
 
 // ── session start ─────────────────────────────────────────────────────────────
+let priorSummary = ''; // cached for chat requests this session
+
 async function beginSession() {
   $('btn-begin').disabled = true;
   $('btn-begin').textContent = 'Starting…';
@@ -766,15 +768,21 @@ async function beginSession() {
   setText($('cb-name'), campaignName || 'Campaign');
   if (initialState) updatePartyStatus(initialState);
 
-  // Load prior messages from DB to restore narrative + Claude context
+  // Load structured context: prior summaries (compressed) + current session messages only
   try {
-    const r = await fetch(`/api/messages?campaign_id=${campaignId}`);
-    const prior = await r.json();
-    if (Array.isArray(prior) && prior.length > 0) {
-      // Restore Claude history
-      history = prior.map(m => ({ role: m.role, content: m.content }));
-      // Render past messages in narrative
-      for (const m of prior) {
+    const r = await fetch(`/api/context?campaign_id=${campaignId}`);
+    const ctx = await r.json();
+
+    if (ctx.prior_summary) priorSummary = ctx.prior_summary;
+
+    const currentMsgs = ctx.current_messages || [];
+
+    if (currentMsgs.length > 0 || ctx.has_prior) {
+      // Restore Claude history from current session messages only
+      history = currentMsgs.map(m => ({ role: m.role, content: m.content }));
+
+      // Render current session in narrative
+      for (const m of currentMsgs) {
         if (m.role === 'user' && m.speaker) {
           appendPlayerBlock(m.speaker, m.content.replace(/^(Jeff|Julee):\s*/, ''));
         } else if (m.role === 'assistant') {
@@ -785,11 +793,12 @@ async function beginSession() {
         }
       }
       scrollN(true);
-      // Add a visual divider before the new session
+
+      // Divider before new session
       const div = document.createElement('div');
       div.style.cssText = 'height:1px;background:var(--border-sub);margin:20px 0 24px;max-width:64ch;opacity:0.5';
       narrative.appendChild(div);
-      // New session greeting — brief, picks up from where we left off
+
       await sendToDM('system',
         'Call start_session, then call set_scene with a description of where the party currently is, then briefly ground us in the immediate moment without recapping the full story.');
       return;
@@ -1093,7 +1102,7 @@ async function sendToDM(speaker, text) {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history, campaign_id: campaignId, session_id: sessionId, speaker }),
+      body: JSON.stringify({ messages: history, campaign_id: campaignId, session_id: sessionId, speaker, prior_summary: priorSummary }),
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1130,6 +1139,14 @@ async function sendToDM(speaker, text) {
             const loc = evt.result.location || '';
             generateSceneImage(desc, loc);
             updateScenePanel({ description: desc, location: loc });
+          }
+          // Auto-generate summary when end_session fires (background, no await)
+          if (evt.name === 'end_session' && sessionId && campaignId) {
+            fetch('/api/generate-summary', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ campaign_id: campaignId, session_id: sessionId }),
+            }).catch(() => {});
           }
         } else if (evt.type === 'session_started') {
           sessionId = evt.session_id;

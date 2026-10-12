@@ -306,6 +306,139 @@ async def scene_image_handler(request: Request) -> Response:
         return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
 
 
+_SUMMARY_PROMPT = """You are summarizing a D&D session for a campaign journal. Write a concise summary (200-300 words) covering:
+- Where the session started and ended (locations)
+- Key NPCs met, their names and roles
+- Major decisions the party made
+- Rolls that mattered and outcomes
+- Current party status (conditions, resources spent, quests active)
+- The most important unresolved thread going into next session
+
+Write in past tense, third person. Include NPC names, location names, and quest names exactly as they appeared. This summary will be fed to the DM AI at the start of the next session to restore context."""
+
+async def generate_summary_handler(request: Request) -> Response:
+    """Generate and store an AI summary of a session's messages."""
+    try:
+        body = await request.json()
+    except Exception:
+        return Response(json.dumps({"error": "invalid JSON"}), status_code=400, media_type="application/json")
+
+    campaign_id = body.get("campaign_id") or os.environ.get("DEFAULT_CAMPAIGN_ID")
+    session_id = body.get("session_id")
+    if not campaign_id:
+        return Response(json.dumps({"error": "campaign_id required"}), media_type="application/json", status_code=400)
+
+    try:
+        from db import repo as _repo
+        async with _repo.tx() as conn:
+            # Get session messages
+            if session_id:
+                rows = await _repo.fetchall(
+                    conn,
+                    "SELECT role, speaker, content FROM messages WHERE campaign_id=%s AND session_id=%s ORDER BY created_at",
+                    (campaign_id, session_id),
+                )
+            else:
+                rows = await _repo.fetchall(
+                    conn,
+                    "SELECT role, speaker, content FROM messages WHERE campaign_id=%s ORDER BY created_at",
+                    (campaign_id,),
+                )
+
+            if not rows:
+                return Response(json.dumps({"error": "no messages found"}), media_type="application/json", status_code=404)
+
+            # Build transcript
+            transcript = "\n\n".join(
+                f"{'[' + r['speaker'] + ']' if r.get('speaker') else '[DM]'}: {r['content'][:500]}"
+                for r in rows
+            )[:15000]  # cap input
+
+            # Summarize with Haiku (cheapest)
+            ai = anthropic.AsyncAnthropic()
+            resp = await ai.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=600,
+                system=_SUMMARY_PROMPT,
+                messages=[{"role": "user", "content": f"Session transcript:\n\n{transcript}"}],
+            )
+            summary = resp.content[0].text
+
+            # Store
+            if session_id:
+                await _repo.execute(
+                    conn,
+                    "UPDATE sessions SET ai_summary=%s WHERE id=%s AND campaign_id=%s",
+                    (summary, session_id, campaign_id),
+                )
+            return Response(json.dumps({"summary": summary}), media_type="application/json")
+
+    except Exception as e:
+        return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
+
+
+async def context_handler(request: Request) -> Response:
+    """Return structured context for chat: prior session summaries + current session messages only."""
+    cid = request.query_params.get("campaign_id") or os.environ.get("DEFAULT_CAMPAIGN_ID")
+    if not cid:
+        return Response(json.dumps({"error": "no campaign_id"}), media_type="application/json")
+
+    try:
+        from db import repo as _repo
+        async with _repo.tx() as conn:
+            # All closed sessions with summaries
+            sessions = await _repo.fetchall(
+                conn,
+                "SELECT id, number, recap, ai_summary FROM sessions "
+                "WHERE campaign_id=%s AND ended_at IS NOT NULL ORDER BY number",
+                (cid,),
+            )
+
+            prior_parts = []
+            for s in sessions:
+                summ = s.get("ai_summary") or s.get("recap") or ""
+                if summ:
+                    prior_parts.append(f"Session {s['number']}:\n{summ}")
+
+            prior_summary = "\n\n---\n\n".join(prior_parts) if prior_parts else ""
+
+            # Current (open) session messages only
+            open_sess = await _repo.fetchone(
+                conn,
+                "SELECT id FROM sessions WHERE campaign_id=%s AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+                (cid,),
+            )
+
+            if open_sess:
+                current_rows = await _repo.fetchall(
+                    conn,
+                    "SELECT role, speaker, content FROM messages WHERE campaign_id=%s AND session_id=%s ORDER BY created_at",
+                    (cid, open_sess["id"]),
+                )
+            else:
+                # No open session — get last 30 messages
+                current_rows = await _repo.fetchall(
+                    conn,
+                    "SELECT role, speaker, content FROM messages WHERE campaign_id=%s ORDER BY created_at DESC LIMIT 30",
+                    (cid,),
+                )
+                current_rows = list(reversed(current_rows))
+
+            current_messages = [
+                {"role": r["role"], "content": r["content"], "speaker": r.get("speaker")}
+                for r in current_rows
+            ]
+
+        return Response(json.dumps({
+            "prior_summary": prior_summary,
+            "current_messages": current_messages,
+            "has_prior": bool(prior_summary),
+        }), media_type="application/json")
+
+    except Exception as e:
+        return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
+
+
 async def ui_handler(request: Request) -> HTMLResponse:
     path = Path(__file__).parent / "ui" / "index.html"
     if not path.exists():
@@ -338,9 +471,33 @@ async def chat_handler(request: Request) -> StreamingResponse:
     campaign_id: str = body.get("campaign_id") or os.environ.get("DEFAULT_CAMPAIGN_ID") or ""
     session_id: str = body.get("session_id") or ""
     speaker: str = body.get("speaker") or ""
+    prior_summary: str = body.get("prior_summary") or ""  # compressed prior session context
 
     tools = _get_tool_schemas()
     ai = anthropic.AsyncAnthropic()
+
+    # ── Build cached system + prior context ───────────────────────────────────
+    # System prompt cached (never changes between calls in a session)
+    _cached_system = [{"type": "text", "text": _DM_SYSTEM, "cache_control": {"type": "ephemeral"}}]
+
+    # If we have a prior summary, inject it as a stable user/assistant prefix
+    # and cache it — it doesn't change within a session
+    _base_messages: list = []
+    if prior_summary:
+        _base_messages = [
+            {
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": f"Prior campaign context (read and remember — do not reference these as 'notes', just use them):\n\n{prior_summary}",
+                    "cache_control": {"type": "ephemeral"},
+                }],
+            },
+            {
+                "role": "assistant",
+                "content": "Understood. I have the campaign history and will continue from where we left off.",
+            },
+        ]
 
     async def _save_message(role: str, content: str, spk: str | None = None) -> None:
         if not campaign_id:
@@ -374,8 +531,8 @@ async def chat_handler(request: Request) -> StreamingResponse:
                 async with ai.messages.stream(
                     model="claude-opus-4-7",
                     max_tokens=8192,
-                    system=_DM_SYSTEM,
-                    messages=messages,
+                    system=_cached_system,
+                    messages=_base_messages + messages,
                     tools=tools,
                 ) as stream:
                     async for event in stream:
@@ -464,6 +621,8 @@ app = Starlette(
         Route("/api/campaigns", endpoint=campaigns_handler),
         Route("/api/state", endpoint=state_handler),
         Route("/api/messages", endpoint=messages_handler),
+        Route("/api/context", endpoint=context_handler),
+        Route("/api/generate-summary", endpoint=generate_summary_handler, methods=["POST"]),
         Route("/api/scene-image", endpoint=scene_image_handler, methods=["POST"]),
         Route("/api/chat", endpoint=chat_handler, methods=["POST", "OPTIONS"]),
         Mount(MOUNT_PATH, app=_mcp_inner),
