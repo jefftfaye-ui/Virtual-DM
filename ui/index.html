@@ -790,13 +790,13 @@ async function beginSession() {
       narrative.appendChild(div);
       // New session greeting — brief, picks up from where we left off
       await sendToDM('system',
-        'Call start_session, then briefly acknowledge we\'re resuming and describe what the characters face right now. Don\'t recap the whole story — just ground us in the immediate moment.');
+        'Call start_session, then call set_scene with a description of where the party currently is, then briefly ground us in the immediate moment without recapping the full story.');
       return;
     }
   } catch { /* fresh start */ }
 
   await sendToDM('system',
-    'The session is beginning. Call start_session first, then greet the players in character with a vivid description of where they are right now. End with what they see or sense that demands a response.');
+    'The session is beginning. Call start_session, then call set_scene with a vivid description of where the party is right now, then greet the players in character. End with what they see or sense that demands a response.');
 }
 
 // ── narrative helpers ─────────────────────────────────────────────────────────
