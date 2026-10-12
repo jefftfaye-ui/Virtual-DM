@@ -395,9 +395,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 <script>
 'use strict';
 
-// Fallback: if CDN scripts didn't load, stub them to prevent hard crash
+// CDN fallback stubs — safe degradation if scripts fail to load
 if (typeof marked === 'undefined') { window.marked = { parse: s => s.replace(/\n/g, '<br>') }; }
-if (typeof DOMPurify === 'undefined') { window.DOMPurify = { sanitize: (s) => s.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/on\w+="[^"]*"/g, '') }; }
+// If DOMPurify didn't load, safeMarkdown falls back to HTML-escaped plain text only.
+// The regex approach is NOT safe; don't attempt to replicate DOMPurify with regexes.
+const _domPurifyLoaded = typeof DOMPurify !== 'undefined';
 
 // ── safe helpers ──────────────────────────────────────────────────────────────
 
@@ -411,7 +413,11 @@ function esc(s) {
 }
 
 function safeMarkdown(md) {
-  // DOMPurify sanitizes the marked HTML output before it touches the DOM
+  if (!_domPurifyLoaded) {
+    // DOMPurify unavailable: render as escaped plain text to avoid XSS
+    const escaped = esc(md).replace(/\n/g, '<br>');
+    return `<p>${escaped}</p>`;
+  }
   return DOMPurify.sanitize(marked.parse(md), {
     ALLOWED_TAGS: ['p','strong','em','b','i','ul','ol','li','h1','h2','h3','br','code','pre','blockquote'],
     ALLOWED_ATTR: [],

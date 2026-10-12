@@ -858,6 +858,13 @@ async def set_scene(
 
 _UNDOABLE_TYPES = {"update_character", "short_rest", "long_rest", "set_scene"}
 
+ALLOWED_CHAR_FIELDS = frozenset({
+    "hp", "temp_hp", "max_hp", "conditions", "concentrating_on",
+    "death_saves", "stable", "dead", "spell_slots", "pact_slots",
+    "resources", "hit_dice", "inspiration", "inventory", "gold",
+    "exhaustion", "overrides",
+})
+
 
 async def _undo_last_event_impl(conn, reason: str, campaign_id: str, session_id: str | None) -> dict:
     # active session boundary
@@ -900,6 +907,7 @@ async def _undo_last_event_impl(conn, reason: str, campaign_id: str, session_id:
         char_id = payload.get("character_id")
         if char_id and prev:
             fields = list(prev.keys())
+            fields = [f for f in fields if f in ALLOWED_CHAR_FIELDS]
             set_clause = ", ".join(f"{f}=%s" for f in fields)
             values = []
             for f in fields:

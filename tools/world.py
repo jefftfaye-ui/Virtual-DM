@@ -7,6 +7,7 @@ Secrets: scoped-only — no tool ever returns all secrets for a campaign at once
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from db import repo
@@ -18,6 +19,11 @@ from tools._util import (
 )
 
 
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
+)
+
+
 # ─── shared ───────────────────────────────────────────────────────────────────
 
 def _str_id(v: Any) -> str | None:
@@ -26,11 +32,8 @@ def _str_id(v: Any) -> str | None:
 
 async def _resolve_by_name_or_id(conn, table: str, name_or_id: str, campaign_id: str) -> dict | None:
     """Try UUID lookup first, then case-insensitive name."""
-    import re
-    UUID_RE = re.compile(
-        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
-    )
-    if UUID_RE.match(name_or_id.strip()):
+    assert table in {"npcs", "locations"}, f"invalid table: {table}"
+    if _UUID_RE.match(name_or_id.strip()):
         return await repo.fetchone(
             conn,
             f"SELECT * FROM {table} WHERE id = %s AND campaign_id = %s",

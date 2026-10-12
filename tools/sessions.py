@@ -39,6 +39,13 @@ async def _start_session_impl(conn, campaign_id: str) -> dict:
     )
     session_id = str(sess_row["id"])
 
+    # Backfill any messages saved this turn before session was created
+    await repo.execute(
+        conn,
+        "UPDATE messages SET session_id = %s WHERE campaign_id = %s AND session_id IS NULL",
+        (session_id, campaign_id),
+    )
+
     await write_event(
         conn, campaign_id, "session_start",
         {"session_id": session_id, "number": next_num},

@@ -9,6 +9,7 @@ Routes:
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 from pathlib import Path
@@ -187,13 +188,12 @@ async def _call_tool(name: str, inputs: dict) -> dict:
         return await fn(**inputs)
     except TypeError as e:
         # Filter out unexpected kwargs before retrying
-        import inspect
         sig = inspect.signature(fn)
         valid = {k: v for k, v in inputs.items() if k in sig.parameters}
         try:
             return await fn(**valid)
         except Exception as e2:
-            return {"error": str(e2)}
+            return {"error": str(e2), "caused_by": str(e)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -206,6 +206,7 @@ def _get_tool_schemas() -> list:
     if _TOOL_SCHEMAS is not None:
         return _TOOL_SCHEMAS
     schemas = []
+    # shortcut: _tool_manager._tools is FastMCP internals; pinned mcp<2 keeps this stable
     for name, tool in mcp._tool_manager._tools.items():
         params = getattr(tool, "parameters", None) or {"type": "object", "properties": {}}
         desc = (getattr(tool, "description", "") or "").strip()
@@ -339,10 +340,9 @@ async def generate_summary_handler(request: Request) -> Response:
                     (campaign_id, session_id),
                 )
             else:
-                rows = await _repo.fetchall(
-                    conn,
-                    "SELECT role, speaker, content FROM messages WHERE campaign_id=%s ORDER BY created_at",
-                    (campaign_id,),
+                return Response(
+                    json.dumps({"error": "session_id required for summary generation"}),
+                    media_type="application/json", status_code=400,
                 )
 
             if not rows:

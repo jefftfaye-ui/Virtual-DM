@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from contextlib import asynccontextmanager
 from typing import Any
@@ -82,7 +83,6 @@ async def store_idempotent(
 ) -> None:
     if not request_id:
         return
-    import json
     await execute(
         conn,
         "INSERT INTO request_ids (campaign_id, request_id, result) VALUES (%s, %s, %s::jsonb) "

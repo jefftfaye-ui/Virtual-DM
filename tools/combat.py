@@ -157,6 +157,13 @@ async def _start_encounter_impl(
 
     combatant_rows: list[dict] = []
 
+    campaign_row = await repo.fetchone(
+        conn, "SELECT edition, settings FROM campaigns WHERE id=%s", (campaign_id,)
+    )
+    edition = str((campaign_row or {}).get("edition", "2014"))
+    settings = (campaign_row or {}).get("settings") or {}
+    hp_mode = settings.get("monster_hp_mode", "average")
+
     # Expand monster entries
     for entry in monsters:
         count = entry.get("count", 1)
@@ -173,10 +180,6 @@ async def _start_encounter_impl(
         # Phase 5: try SRD statblock lookup if statblock_ref provided or name matches
         if ac is None or hp is None or statblock_ref:
             lookup_name = statblock_ref or base_name
-            campaign_row = await repo.fetchone(
-                conn, "SELECT edition FROM campaigns WHERE id=%s", (campaign_id,)
-            )
-            edition = str((campaign_row or {}).get("edition", "2014"))
             meta = await _lookup_monster_meta(conn, lookup_name, edition)
             if meta:
                 ac = ac if ac is not None else meta["ac"]
@@ -201,12 +204,6 @@ async def _start_encounter_impl(
             m_name = f"{base_name} {i}" if count > 1 else base_name
 
             # HP mode: use hit_dice_expr if rolled mode, else average
-            campaign_row2 = await repo.fetchone(
-                conn, "SELECT settings FROM campaigns WHERE id=%s", (campaign_id,)
-            )
-            settings = (campaign_row2 or {}).get("settings") or {}
-            hp_mode = settings.get("monster_hp_mode", "average")
-
             actual_hp = hp
             if hit_dice_expr and hp_mode == "rolled":
                 roll_result = await _roll_impl(
