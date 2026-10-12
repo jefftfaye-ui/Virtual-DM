@@ -677,6 +677,36 @@ async function beginSession() {
   setText($('cb-name'), campaignName || 'Campaign');
   if (initialState) updatePartyStatus(initialState);
 
+  // Load prior messages from DB to restore narrative + Claude context
+  try {
+    const r = await fetch(`/api/messages?campaign_id=${campaignId}`);
+    const prior = await r.json();
+    if (Array.isArray(prior) && prior.length > 0) {
+      // Restore Claude history
+      history = prior.map(m => ({ role: m.role, content: m.content }));
+      // Render past messages in narrative
+      for (const m of prior) {
+        if (m.role === 'user' && m.speaker) {
+          appendPlayerBlock(m.speaker, m.content.replace(/^(Jeff|Julee):\s*/, ''));
+        } else if (m.role === 'assistant') {
+          const el = document.createElement('div');
+          el.className = 'dm-block';
+          el.innerHTML = safeMarkdown(m.content);
+          narrative.appendChild(el);
+        }
+      }
+      scrollN(true);
+      // Add a visual divider before the new session
+      const div = document.createElement('div');
+      div.style.cssText = 'height:1px;background:var(--border-sub);margin:20px 0 24px;max-width:64ch;opacity:0.5';
+      narrative.appendChild(div);
+      // New session greeting — brief, picks up from where we left off
+      await sendToDM('system',
+        'Call start_session, then briefly acknowledge we\'re resuming and describe what the characters face right now. Don\'t recap the whole story — just ground us in the immediate moment.');
+      return;
+    }
+  } catch { /* fresh start */ }
+
   await sendToDM('system',
     'The session is beginning. Call start_session first, then greet the players in character with a vivid description of where they are right now. End with what they see or sense that demands a response.');
 }
@@ -852,7 +882,7 @@ async function sendToDM(speaker, text) {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: history, campaign_id: campaignId, session_id: sessionId }),
+      body: JSON.stringify({ messages: history, campaign_id: campaignId, session_id: sessionId, speaker }),
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -883,6 +913,8 @@ async function sendToDM(speaker, text) {
         } else if (evt.type === 'tool_result') {
           finishStream();
           appendToolEvent(evt.name, evt.result || {});
+        } else if (evt.type === 'session_started') {
+          sessionId = evt.session_id;
         } else if (evt.type === 'state_update') {
           updatePartyStatus(evt.state);
         } else if (evt.type === 'error') {

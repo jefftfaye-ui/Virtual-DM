@@ -226,6 +226,41 @@ async def campaigns_handler(request: Request) -> Response:
         return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
 
 
+async def messages_handler(request: Request) -> Response:
+    """Return conversation history for a campaign (last 100 messages)."""
+    cid = request.query_params.get("campaign_id") or os.environ.get("DEFAULT_CAMPAIGN_ID")
+    session_id = request.query_params.get("session_id")
+    if not cid:
+        return Response(json.dumps({"error": "no campaign_id"}), media_type="application/json")
+    try:
+        from db import repo as _repo
+        async with _repo.tx() as conn:
+            if session_id:
+                rows = await _repo.fetchall(
+                    conn,
+                    "SELECT role, content, speaker, created_at FROM messages "
+                    "WHERE campaign_id=%s AND session_id=%s ORDER BY created_at LIMIT 200",
+                    (cid, session_id),
+                )
+            else:
+                # Get the most recent open session's messages
+                rows = await _repo.fetchall(
+                    conn,
+                    "SELECT m.role, m.content, m.speaker, m.created_at FROM messages m "
+                    "LEFT JOIN sessions s ON m.session_id = s.id "
+                    "WHERE m.campaign_id=%s "
+                    "ORDER BY m.created_at DESC LIMIT 100",
+                    (cid,),
+                )
+                rows = list(reversed(rows))
+        return Response(
+            json.dumps([{"role": r["role"], "content": r["content"], "speaker": r.get("speaker"), "created_at": r["created_at"].isoformat() if r["created_at"] else None} for r in rows], default=str),
+            media_type="application/json",
+        )
+    except Exception as e:
+        return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
+
+
 async def ui_handler(request: Request) -> HTMLResponse:
     path = Path(__file__).parent / "ui" / "index.html"
     if not path.exists():
@@ -256,13 +291,37 @@ async def chat_handler(request: Request) -> StreamingResponse:
 
     messages: list = body.get("messages", [])
     campaign_id: str = body.get("campaign_id") or os.environ.get("DEFAULT_CAMPAIGN_ID") or ""
+    session_id: str = body.get("session_id") or ""
+    speaker: str = body.get("speaker") or ""
 
     tools = _get_tool_schemas()
     ai = anthropic.AsyncAnthropic()
 
-    async def generate():
-        nonlocal messages
+    async def _save_message(role: str, content: str, spk: str | None = None) -> None:
+        if not campaign_id:
+            return
         try:
+            from db import repo as _repo
+            async with _repo.tx() as conn:
+                await _repo.execute(
+                    conn,
+                    "INSERT INTO messages (campaign_id, session_id, role, content, speaker) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (campaign_id, session_id or None, role, content, spk or None),
+                )
+        except Exception:
+            pass  # never block chat on message save failure
+
+    async def generate():
+        nonlocal messages, session_id
+        try:
+            # Save the incoming user message (last entry in messages list)
+            if messages and messages[-1]["role"] == "user":
+                last_user = messages[-1]["content"]
+                user_text = last_user if isinstance(last_user, str) else ""
+                if user_text and not user_text.startswith("The session is beginning"):
+                    await _save_message("user", user_text, speaker or None)
+
             while True:
                 content_blocks = []
                 stop_reason = None
@@ -292,6 +351,13 @@ async def chat_handler(request: Request) -> StreamingResponse:
                 messages.append({"role": "assistant", "content": [b.model_dump() for b in content_blocks]})
 
                 if stop_reason != "tool_use":
+                    # Save final assistant text response
+                    assistant_text = "".join(
+                        getattr(b, "text", "") for b in content_blocks if hasattr(b, "text")
+                    )
+                    if assistant_text:
+                        await _save_message("assistant", assistant_text)
+                        # If start_session returned a session_id, update it for subsequent saves
                     break
 
                 tool_results = []
@@ -312,6 +378,10 @@ async def chat_handler(request: Request) -> StreamingResponse:
                             "tool_use_id": block.id,
                             "content": result_str,
                         })
+                        # Capture session_id when start_session fires
+                        if block.name == "start_session" and isinstance(result, dict) and result.get("session_id"):
+                            session_id = result["session_id"]
+                            yield f"data: {json.dumps({'type': 'session_started', 'session_id': session_id})}\n\n"
                         # Mark state dirty for tools that mutate party/world state
                         if block.name in ("update_character", "update_combatant", "death_save",
                                           "rest", "start_encounter", "end_encounter", "next_turn",
@@ -348,6 +418,7 @@ app = Starlette(
         Route("/ui", endpoint=ui_handler),
         Route("/api/campaigns", endpoint=campaigns_handler),
         Route("/api/state", endpoint=state_handler),
+        Route("/api/messages", endpoint=messages_handler),
         Route("/api/chat", endpoint=chat_handler, methods=["POST", "OPTIONS"]),
         Mount(MOUNT_PATH, app=_mcp_inner),
     ]
