@@ -43,8 +43,8 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 #pre-session {
   position: fixed; inset: 0; z-index: 100;
   background: var(--bg);
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 48px 24px;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 48px 24px; overflow-y: auto;
 }
 #pre-session.hidden { display: none; }
 
@@ -110,14 +110,14 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.35} }
 
 #narrative {
-  grid-column: 1; grid-row: 2; overflow-y: auto; padding: 36px 48px 24px; scroll-behavior: smooth;
+  grid-column: 1; grid-row: 2; overflow-y: auto; padding: 36px 40px 24px; scroll-behavior: smooth;
 }
 #narrative::-webkit-scrollbar { width: 4px; }
 #narrative::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 2px; }
 
 .dm-block {
   font-family: var(--font-n); font-size: 1.1rem; color: var(--text-dm);
-  line-height: 1.82; max-width: 64ch; margin-bottom: 24px;
+  line-height: 1.82; max-width: 80ch; margin-bottom: 24px;
 }
 .dm-block p { margin-bottom: 0.8em; }
 .dm-block p:last-child { margin-bottom: 0; }
@@ -129,11 +129,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .dm-block.streaming::after { content:'▋'; color:var(--copper); animation:blink .9s step-end infinite; margin-left:1px; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
-.player-block { display: flex; gap: 10px; align-items: baseline; margin-bottom: 16px; max-width: 64ch; }
+.player-block { display: flex; gap: 10px; align-items: baseline; margin-bottom: 16px; max-width: 80ch; }
 .player-label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--copper-dim); white-space: nowrap; min-width: 42px; }
 .player-text { font-family: var(--font-n); font-size: 1rem; color: var(--text-2); line-height: 1.65; }
 
-.tool-event { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-3); margin-bottom: 10px; max-width: 64ch; }
+.tool-event { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--text-3); margin-bottom: 10px; max-width: 80ch; }
 .te-icon { color: var(--copper-dim); }
 .te-roll { font-weight: 600; color: var(--text-2); }
 .te-hp-down { font-weight: 500; color: var(--hp-crit); }
