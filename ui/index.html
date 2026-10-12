@@ -92,7 +92,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 /* ── main layout ─────────────────────────────────────── */
 #game {
   display: grid;
-  grid-template-columns: 1fr 272px;
+  grid-template-columns: 1fr 272px 272px;
   grid-template-rows: 44px 1fr auto;
   height: 100vh; overflow: hidden;
 }
@@ -145,9 +145,49 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .thinking-dots span:nth-child(3) { animation-delay: .4s; }
 @keyframes t-bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-4px)} }
 
+/* ── scene art panel ─────────────────────────────────── */
+#scene-panel {
+  grid-column: 2; grid-row: 2 / 4;
+  background: var(--surface); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#scene-art-wrap {
+  flex: 1; position: relative; overflow: hidden;
+  background: oklch(13% 0.01 55);
+  display: flex; align-items: center; justify-content: center;
+}
+#scene-art-img {
+  width: 100%; height: 100%; object-fit: cover;
+  transition: opacity 0.6s;
+}
+#scene-art-loading {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px;
+}
+.art-spinner {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--copper-dim);
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.art-spinner-label { font-size: 0.68rem; color: var(--text-3); letter-spacing: 0.06em; }
+#scene-art-placeholder {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px;
+}
+.art-empty-icon { font-size: 2rem; opacity: 0.2; }
+.art-empty-label { font-size: 0.68rem; color: var(--text-3); text-align: center; max-width: 20ch; }
+#scene-info-bar {
+  padding: 10px 14px; border-top: 1px solid var(--border-sub);
+  background: var(--surface);
+}
+.scene-loc { font-size: 0.78rem; font-weight: 500; color: var(--text-2); margin-bottom: 2px; }
+.scene-date { font-size: 0.65rem; color: var(--text-3); }
+
 /* ── sidebar ─────────────────────────────────────────── */
 #party-status {
-  grid-column: 2; grid-row: 2 / 4; background: var(--surface); border-left: 1px solid var(--border);
+  grid-column: 3; grid-row: 2 / 4; background: var(--surface); border-left: 1px solid var(--border);
   overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 0;
 }
 #party-status::-webkit-scrollbar { width: 3px; }
@@ -202,9 +242,19 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .cl-seg { flex: 1; height: 6px; border-radius: 1px; background: var(--surface-2); transition: background .4s; }
 .cl-seg.filled { background: var(--copper); }
 
+/* location / npc / inventory sidebar sections */
+.loc-name { font-size: 0.82rem; font-weight: 500; color: var(--text-2); margin-bottom: 3px; }
+.loc-date { font-size: 0.65rem; color: var(--text-3); margin-bottom: 8px; }
+.npc-row { display: flex; align-items: baseline; gap: 6px; margin-bottom: 5px; }
+.npc-disp { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.npc-name-s { font-size: 0.78rem; color: var(--text-2); font-weight: 500; }
+.npc-role-s { font-size: 0.65rem; color: var(--text-3); }
+.inv-item { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-2); margin-bottom: 3px; }
+.inv-qty { color: var(--text-3); font-variant-numeric: tabular-nums; }
+
 /* ── player strip ────────────────────────────────────── */
 #player-strip {
-  grid-column: 1; grid-row: 3; display: grid; grid-template-columns: 1fr 1fr;
+  grid-column: 1 / 3; grid-row: 3; display: grid; grid-template-columns: 1fr 1fr;
   border-top: 1px solid var(--border); background: var(--surface);
 }
 .pia { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
@@ -264,6 +314,25 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
   <main id="narrative"></main>
 
+  <!-- ── scene art panel ──────────────────────────────── -->
+  <div id="scene-panel">
+    <div id="scene-art-wrap">
+      <img id="scene-art-img" style="display:none;opacity:0" alt="Current scene">
+      <div id="scene-art-loading" style="display:none">
+        <div class="art-spinner"></div>
+        <span class="art-spinner-label">Painting scene…</span>
+      </div>
+      <div id="scene-art-placeholder">
+        <span class="art-empty-icon">🗺</span>
+        <span class="art-empty-label">Scene art appears when DM sets a location</span>
+      </div>
+    </div>
+    <div id="scene-info-bar">
+      <div class="scene-loc" id="art-loc-name">—</div>
+      <div class="scene-date" id="art-date"></div>
+    </div>
+  </div>
+
   <aside id="party-status">
     <p class="s-label">Party</p>
     <div id="pc-list"></div>
@@ -273,6 +342,14 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       <p class="s-label">Encounter</p>
       <p class="enc-round">Round <strong id="enc-round">1</strong></p>
       <div id="c-list"></div>
+    </div>
+
+    <div id="location-section" style="display:none">
+      <div class="s-div"></div>
+      <p class="s-label">Location</p>
+      <div class="loc-name" id="sb-loc-name"></div>
+      <div class="loc-date" id="sb-loc-date"></div>
+      <div id="sb-npc-list"></div>
     </div>
 
     <div id="quest-section" style="display:none">
@@ -285,6 +362,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
       <div class="s-div"></div>
       <p class="s-label">Clocks</p>
       <div id="cl-list"></div>
+    </div>
+
+    <div id="inventory-section" style="display:none">
+      <div class="s-div"></div>
+      <p class="s-label">Carried</p>
+      <div id="inv-list"></div>
     </div>
   </aside>
 
@@ -511,6 +594,11 @@ function makePC(pc) {
 }
 
 function updatePartyStatus(state) {
+  // Scene art + sidebar B
+  updateScenePanel(state.scene);
+  updateLocationSidebar(state.scene);
+  updateInventorySidebar(state.party);
+
   // PCs
   const pcList = $('pc-list');
   pcList.replaceChildren(...(state.party || []).map(makePC));
@@ -778,6 +866,128 @@ function showThinking() {
   scrollN(true);
 }
 
+// ── scene art ─────────────────────────────────────────────────────────────────
+
+function dispColor(d) {
+  if (d >= 2) return 'var(--hp-full)';
+  if (d >= 0) return 'oklch(68% .10 90)';
+  if (d >= -1) return 'oklch(64% .10 42)';
+  return 'var(--hp-crit)';
+}
+
+async function generateSceneImage(description, location) {
+  if (!description && !location) return;
+  const placeholder = $('scene-art-placeholder');
+  const loading = $('scene-art-loading');
+  const img = $('scene-art-img');
+
+  placeholder.style.display = 'none';
+  img.style.display = 'none';
+  loading.style.display = 'flex';
+
+  try {
+    const r = await fetch('/api/scene-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description, location }),
+    });
+    const data = await r.json();
+    if (data.url) {
+      img.src = data.url;
+      img.onload = () => {
+        loading.style.display = 'none';
+        img.style.display = 'block';
+        // fade in
+        requestAnimationFrame(() => { img.style.opacity = '1'; });
+      };
+      img.onerror = () => {
+        loading.style.display = 'none';
+        placeholder.style.display = 'flex';
+      };
+    } else {
+      loading.style.display = 'none';
+      placeholder.style.display = 'flex';
+    }
+  } catch {
+    loading.style.display = 'none';
+    placeholder.style.display = 'flex';
+  }
+}
+
+function updateScenePanel(scene) {
+  if (!scene) return;
+  const locName = scene.location || scene.description?.split('.')[0] || '—';
+  setText($('art-loc-name'), locName);
+  setText($('art-date'), scene.in_game_date || '');
+}
+
+function updateLocationSidebar(scene) {
+  if (!scene) return;
+  const locSec = $('location-section');
+
+  if (scene.location || scene.in_game_date) {
+    locSec.style.display = '';
+    setText($('sb-loc-name'), scene.location || '—');
+    setText($('sb-loc-date'), scene.in_game_date || '');
+
+    const npcList = $('sb-npc-list');
+    const npcs = scene.npcs_present || [];
+    if (npcs.length) {
+      npcList.replaceChildren(...npcs.map(n => {
+        const row = document.createElement('div');
+        row.className = 'npc-row';
+        const dot = document.createElement('div');
+        dot.className = 'npc-disp';
+        dot.style.background = dispColor(n.disposition);
+        const info = document.createElement('div');
+        const name = document.createElement('span');
+        name.className = 'npc-name-s';
+        setText(name, n.name);
+        const role = document.createElement('span');
+        role.className = 'npc-role-s';
+        setText(role, n.role || '');
+        info.append(name, document.createTextNode(' '), role);
+        row.append(dot, info);
+        return row;
+      }));
+    } else {
+      npcList.replaceChildren();
+    }
+  } else {
+    locSec.style.display = 'none';
+  }
+}
+
+function updateInventorySidebar(party) {
+  const invSec = $('inventory-section');
+  const invList = $('inv-list');
+
+  // Combine all inventory across party
+  const allItems = [];
+  for (const pc of (party || [])) {
+    for (const item of (pc.inventory || [])) {
+      if (item.item) allItems.push({ ...item, owner: pc.name });
+    }
+  }
+
+  if (allItems.length) {
+    invSec.style.display = '';
+    invList.replaceChildren(...allItems.map(item => {
+      const row = document.createElement('div');
+      row.className = 'inv-item';
+      const name = document.createElement('span');
+      setText(name, item.item);
+      const qty = document.createElement('span');
+      qty.className = 'inv-qty';
+      setText(qty, item.qty > 1 ? `×${item.qty}` : '');
+      row.append(name, qty);
+      return row;
+    }));
+  } else {
+    invSec.style.display = 'none';
+  }
+}
+
 // ── TTS ───────────────────────────────────────────────────────────────────────
 let _voices = [];
 function _loadVoices() {
@@ -913,6 +1123,13 @@ async function sendToDM(speaker, text) {
         } else if (evt.type === 'tool_result') {
           finishStream();
           appendToolEvent(evt.name, evt.result || {});
+          // Generate scene art when set_scene fires
+          if (evt.name === 'set_scene' && evt.result) {
+            const desc = evt.result.description || '';
+            const loc = evt.result.location || '';
+            generateSceneImage(desc, loc);
+            updateScenePanel({ description: desc, location: loc });
+          }
         } else if (evt.type === 'session_started') {
           sessionId = evt.session_id;
         } else if (evt.type === 'state_update') {

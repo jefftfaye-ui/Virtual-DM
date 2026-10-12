@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import anthropic
+import openai as _openai
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
@@ -261,6 +262,42 @@ async def messages_handler(request: Request) -> Response:
         return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
 
 
+async def scene_image_handler(request: Request) -> Response:
+    """Generate a DALL-E 3 scene image from a description."""
+    try:
+        body = await request.json()
+    except Exception:
+        return Response(json.dumps({"error": "invalid JSON"}), status_code=400, media_type="application/json")
+
+    description = (body.get("description") or "").strip()
+    location = (body.get("location") or "").strip()
+    if not description and not location:
+        return Response(json.dumps({"error": "description required"}), media_type="application/json", status_code=400)
+
+    prompt = (
+        f"Fantasy tabletop RPG environment illustration. "
+        f"{'Location: ' + location + '. ' if location else ''}"
+        f"{description} "
+        f"Dark atmospheric oil painting style, cinematic lighting, rich detail, "
+        f"no characters in foreground, no text, no UI elements, no watermarks."
+    )[:900]  # DALL-E prompt limit
+
+    try:
+        client = _openai.AsyncOpenAI()
+        resp = await client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        url = resp.data[0].url
+        revised = getattr(resp.data[0], "revised_prompt", None)
+        return Response(json.dumps({"url": url, "revised_prompt": revised}), media_type="application/json")
+    except Exception as e:
+        return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
+
+
 async def ui_handler(request: Request) -> HTMLResponse:
     path = Path(__file__).parent / "ui" / "index.html"
     if not path.exists():
@@ -419,6 +456,7 @@ app = Starlette(
         Route("/api/campaigns", endpoint=campaigns_handler),
         Route("/api/state", endpoint=state_handler),
         Route("/api/messages", endpoint=messages_handler),
+        Route("/api/scene-image", endpoint=scene_image_handler, methods=["POST"]),
         Route("/api/chat", endpoint=chat_handler, methods=["POST", "OPTIONS"]),
         Mount(MOUNT_PATH, app=_mcp_inner),
     ]

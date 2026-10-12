@@ -64,6 +64,7 @@ def _pc_summary(c: dict) -> dict:
         "inspiration": bool(c.get("inspiration")),
         "exhaustion": c.get("exhaustion", 0),
         "gold": c.get("gold", 0),
+        "inventory": list(c.get("inventory") or []),
     }
 
 
@@ -111,9 +112,25 @@ async def _get_state_impl(
         loc_id = campaign.get("current_location_id")
         if loc_id:
             loc = await repo.fetchone(
-                conn, "SELECT name FROM locations WHERE id = %s", (loc_id,)
+                conn, "SELECT id, name, description FROM locations WHERE id = %s", (loc_id,)
             )
-            scene["location"] = loc["name"] if loc else None
+            if loc:
+                scene["location"] = loc["name"]
+                scene["location_description"] = loc.get("description")
+                # NPCs at this location
+                npcs = await repo.fetchall(
+                    conn,
+                    "SELECT name, role, disposition, public_description, status FROM npcs "
+                    "WHERE location_id = %s AND campaign_id = %s AND status = 'alive' ORDER BY name",
+                    (loc_id, campaign_id),
+                )
+                scene["npcs_present"] = [
+                    {"name": n["name"], "role": n.get("role"), "disposition": n["disposition"],
+                     "description": n.get("public_description")}
+                    for n in npcs
+                ]
+            else:
+                scene["location"] = None
         result["scene"] = scene
 
     if "encounter" in include:
