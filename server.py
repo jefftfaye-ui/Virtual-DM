@@ -386,43 +386,42 @@ async def context_handler(request: Request) -> Response:
     try:
         from db import repo as _repo
         async with _repo.tx() as conn:
-            # All closed sessions with summaries
-            sessions = await _repo.fetchall(
+            # Find the most recent session (open OR closed) — its messages are always "current"
+            latest_sess = await _repo.fetchone(
                 conn,
-                "SELECT id, number, recap, ai_summary FROM sessions "
-                "WHERE campaign_id=%s AND ended_at IS NOT NULL ORDER BY number",
+                "SELECT id, number, ended_at IS NULL as is_open FROM sessions "
+                "WHERE campaign_id=%s ORDER BY number DESC LIMIT 1",
                 (cid,),
             )
 
+            # All OTHER closed sessions contribute to prior_summary (everything before latest)
+            if latest_sess:
+                prior_sessions = await _repo.fetchall(
+                    conn,
+                    "SELECT number, recap, ai_summary FROM sessions "
+                    "WHERE campaign_id=%s AND ended_at IS NOT NULL AND id != %s ORDER BY number",
+                    (cid, latest_sess["id"]),
+                )
+            else:
+                prior_sessions = []
+
             prior_parts = []
-            for s in sessions:
+            for s in prior_sessions:
                 summ = s.get("ai_summary") or s.get("recap") or ""
                 if summ:
                     prior_parts.append(f"Session {s['number']}:\n{summ}")
-
             prior_summary = "\n\n---\n\n".join(prior_parts) if prior_parts else ""
 
-            # Current (open) session messages only
-            open_sess = await _repo.fetchone(
-                conn,
-                "SELECT id FROM sessions WHERE campaign_id=%s AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
-                (cid,),
-            )
-
-            if open_sess:
+            # Current messages = latest session's messages (open or closed)
+            if latest_sess:
                 current_rows = await _repo.fetchall(
                     conn,
-                    "SELECT role, speaker, content FROM messages WHERE campaign_id=%s AND session_id=%s ORDER BY created_at",
-                    (cid, open_sess["id"]),
+                    "SELECT role, speaker, content FROM messages "
+                    "WHERE campaign_id=%s AND session_id=%s ORDER BY created_at",
+                    (cid, latest_sess["id"]),
                 )
             else:
-                # No open session — get last 30 messages
-                current_rows = await _repo.fetchall(
-                    conn,
-                    "SELECT role, speaker, content FROM messages WHERE campaign_id=%s ORDER BY created_at DESC LIMIT 30",
-                    (cid,),
-                )
-                current_rows = list(reversed(current_rows))
+                current_rows = []
 
             current_messages = [
                 {"role": r["role"], "content": r["content"], "speaker": r.get("speaker")}
