@@ -251,6 +251,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   <header id="campaign-bar">
     <span class="cb-name" id="cb-name"></span>
     <span class="cb-scene" id="cb-scene"></span>
+    <button id="tts-toggle" title="DM voice on/off" style="
+      background:transparent;border:none;cursor:pointer;
+      font-size:1.05rem;color:var(--text-3);padding:0 4px;
+      transition:color .15s;line-height:1;
+    " aria-pressed="false">🔇</button>
     <span class="cb-session">
       <span class="cb-dot"></span>
       Session <span id="cb-sess-num">1</span>
@@ -338,6 +343,7 @@ let campaignName = '';
 let sessionId = null;
 let streaming = false;
 let initialState = null;
+let ttsEnabled = false;
 
 // ── elements ──────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -694,6 +700,16 @@ function appendPlayerBlock(speaker, text) {
   scrollN();
 }
 
+function atBottom() {
+  return narrative.scrollHeight - narrative.scrollTop - narrative.clientHeight < 120;
+}
+
+function scrollN(force = false) {
+  if (force || atBottom()) {
+    narrative.scrollTo({ top: narrative.scrollHeight, behavior: 'smooth' });
+  }
+}
+
 function streamText(delta) {
   if (!curDMEl) {
     curDMEl = document.createElement('div');
@@ -703,15 +719,18 @@ function streamText(delta) {
   curDMText += delta;
   curDMEl.innerHTML = safeMarkdown(curDMText);
   curDMEl.classList.add('streaming');
-  scrollN();
+  // no scroll during streaming — user controls position
 }
 
 function finishStream() {
   if (curDMEl) {
     curDMEl.innerHTML = safeMarkdown(curDMText);
     curDMEl.classList.remove('streaming');
+    const text = curDMText;
     curDMEl = null;
     curDMText = '';
+    scrollN(true); // scroll once after block is complete
+    speakDM(text);
   }
   removeThinking();
 }
@@ -726,7 +745,50 @@ function showThinking() {
   dots.append(...[1,2,3].map(() => document.createElement('span')));
   el.appendChild(dots);
   narrative.appendChild(el);
-  scrollN();
+  scrollN(true);
+}
+
+// ── TTS ───────────────────────────────────────────────────────────────────────
+let _voices = [];
+function _loadVoices() {
+  _voices = window.speechSynthesis?.getVoices() || [];
+}
+if (window.speechSynthesis) {
+  _loadVoices();
+  window.speechSynthesis.addEventListener('voiceschanged', _loadVoices);
+}
+
+function _bestVoice() {
+  const prefs = ['Daniel', 'Google UK English Male', 'Alex', 'Google US English Male'];
+  for (const name of prefs) {
+    const v = _voices.find(v => v.name.includes(name));
+    if (v) return v;
+  }
+  return null;
+}
+
+function _stripMarkdown(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/gs, '$1')
+    .replace(/\*(.+?)\*/gs, '$1')
+    .replace(/#{1,6}\s*/g, '')
+    .replace(/`(.+?)`/g, '$1')
+    .replace(/\[(.+?)\]\(.+?\)/g, '$1')
+    .replace(/\n{2,}/g, '. ')
+    .replace(/\n/g, ' ')
+    .trim();
+}
+
+function speakDM(text) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(_stripMarkdown(text));
+  const v = _bestVoice();
+  if (v) utt.voice = v;
+  utt.rate = 0.88;
+  utt.pitch = 0.88;
+  utt.volume = 1;
+  window.speechSynthesis.speak(utt);
 }
 
 function removeThinking() {
@@ -873,6 +935,7 @@ function wirePlayer(player, taId, micId, sendId) {
     const text = ta.value.trim();
     if (!text || streaming) return;
     ta.value = '';
+    window.speechSynthesis?.cancel();
     sendToDM(player, text);
   };
 
@@ -903,6 +966,16 @@ wirePlayer('Jeff',  'ta-jeff',  'mic-jeff',  'send-jeff');
 wirePlayer('Julee', 'ta-julee', 'mic-julee', 'send-julee');
 
 $('btn-begin').addEventListener('click', beginSession);
+
+// TTS toggle
+$('tts-toggle').addEventListener('click', () => {
+  ttsEnabled = !ttsEnabled;
+  const btn = $('tts-toggle');
+  btn.textContent = ttsEnabled ? '🔊' : '🔇';
+  btn.style.color = ttsEnabled ? 'var(--copper)' : 'var(--text-3)';
+  btn.setAttribute('aria-pressed', String(ttsEnabled));
+  if (!ttsEnabled) window.speechSynthesis?.cancel();
+});
 
 initPreSession();
 </script>
