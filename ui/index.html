@@ -1124,45 +1124,54 @@ async function generateMap(description, location) {
 }
 
 // ── TTS ───────────────────────────────────────────────────────────────────────
-let _voices = [];
-function _loadVoices() {
-  _voices = window.speechSynthesis?.getVoices() || [];
-}
-if (window.speechSynthesis) {
-  _loadVoices();
-  window.speechSynthesis.addEventListener('voiceschanged', _loadVoices);
-}
-
-function _bestVoice() {
-  const prefs = ['Daniel', 'Google UK English Male', 'Alex', 'Google US English Male'];
-  for (const name of prefs) {
-    const v = _voices.find(v => v.name.includes(name));
-    if (v) return v;
-  }
-  return null;
-}
+let _currentAudio = null;
 
 function _stripMarkdown(text) {
   return text
-    .replace(/\*\*(.+?)\*\*/gs, '$1')
-    .replace(/\*(.+?)\*/gs, '$1')
-    .replace(/#{1,6}\s*/g, '')
-    .replace(/`(.+?)`/g, '$1')
+    .replace(/\*\*(.+?)\*\*/gs, '$1').replace(/\*(.+?)\*/gs, '$1')
+    .replace(/#{1,6}\s*/g, '').replace(/`(.+?)`/g, '$1')
     .replace(/\[(.+?)\]\(.+?\)/g, '$1')
-    .replace(/\n{2,}/g, '. ')
-    .replace(/\n/g, ' ')
-    .trim();
+    .replace(/\n{2,}/g, '. ').replace(/\n/g, ' ').trim();
 }
 
-function speakDM(text) {
-  if (!ttsEnabled || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const utt = new SpeechSynthesisUtterance(_stripMarkdown(text));
-  const v = _bestVoice();
-  if (v) utt.voice = v;
-  utt.rate = 0.88;
-  utt.pitch = 0.88;
-  utt.volume = 1;
+function _cancelSpeech() {
+  if (_currentAudio) { _currentAudio.pause(); _currentAudio = null; }
+  window.speechSynthesis?.cancel();
+}
+
+async function speakDM(text) {
+  if (!ttsEnabled) return;
+  _cancelSpeech();
+  const clean = _stripMarkdown(text);
+  if (!clean) return;
+
+  // Try OpenAI TTS first (server-side, onyx voice)
+  try {
+    const r = await fetch('/api/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean }),
+    });
+    if (r.ok && r.status !== 204) {
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      _currentAudio = audio;
+      audio.onended = () => { URL.revokeObjectURL(url); _currentAudio = null; };
+      audio.onerror = () => { URL.revokeObjectURL(url); _currentAudio = null; };
+      await audio.play();
+      return;
+    }
+  } catch { /* fall through to Web Speech */ }
+
+  // Fallback: Web Speech API
+  if (!window.speechSynthesis) return;
+  const voices = window.speechSynthesis.getVoices();
+  const prefs = ['Daniel', 'Google UK English Male', 'Alex'];
+  const voice = prefs.map(p => voices.find(v => v.name.includes(p))).find(Boolean) || null;
+  const utt = new SpeechSynthesisUtterance(clean);
+  if (voice) utt.voice = voice;
+  utt.rate = 0.88; utt.pitch = 0.88;
   window.speechSynthesis.speak(utt);
 }
 
@@ -1340,7 +1349,7 @@ function wirePlayer(player, taId, micId, sendId) {
     const text = ta.value.trim();
     if (!text || streaming) return;
     ta.value = '';
-    window.speechSynthesis?.cancel();
+    _cancelSpeech();
     sendToDM(player, text);
   };
 
@@ -1390,7 +1399,7 @@ $('tts-toggle').addEventListener('click', () => {
   btn.textContent = ttsEnabled ? '🔊' : '🔇';
   btn.style.color = ttsEnabled ? 'var(--copper)' : 'var(--text-3)';
   btn.setAttribute('aria-pressed', String(ttsEnabled));
-  if (!ttsEnabled) window.speechSynthesis?.cancel();
+  if (!ttsEnabled) _cancelSpeech();
 });
 
 initPreSession();

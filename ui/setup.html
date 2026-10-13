@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual DM — Setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       oklch(11% 0.010 55);
+  --surface:  oklch(15% 0.012 55);
+  --surface-2:oklch(19% 0.013 55);
+  --copper:   oklch(62% 0.130 52);
+  --copper-dim:oklch(42% 0.090 52);
+  --text:     oklch(91% 0.008 55);
+  --text-2:   oklch(68% 0.008 55);
+  --text-3:   oklch(48% 0.008 55);
+  --border:   oklch(22% 0.011 55);
+  --r: 5px;
+  --font-n: 'EB Garamond', Georgia, serif;
+  --font-u: 'DM Sans', system-ui, sans-serif;
+}
+html, body { min-height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-u); font-size: 15px; }
+
+.page {
+  max-width: 560px; margin: 0 auto; padding: 60px 24px 80px;
+  display: flex; flex-direction: column; gap: 0;
+}
+
+.eyebrow {
+  font-size: 0.7rem; font-weight: 500; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--copper); margin-bottom: 16px;
+}
+h1 {
+  font-family: var(--font-n); font-size: 2.2rem; font-weight: 500;
+  color: var(--text); margin-bottom: 10px; line-height: 1.2;
+}
+.subtitle {
+  font-size: 0.9rem; color: var(--text-2); line-height: 1.6; margin-bottom: 44px;
+}
+
+.section {
+  margin-bottom: 36px;
+}
+.section-label {
+  font-size: 0.68rem; font-weight: 600; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--copper-dim);
+  margin-bottom: 14px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.field { margin-bottom: 16px; }
+.field label {
+  display: block; font-size: 0.78rem; font-weight: 500;
+  color: var(--text-2); margin-bottom: 6px;
+}
+.field .hint {
+  font-size: 0.7rem; color: var(--text-3); margin-top: 4px; line-height: 1.5;
+}
+.field input {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); color: var(--text); font-family: var(--font-u);
+  font-size: 0.88rem; padding: 10px 14px; outline: none;
+  transition: border-color .15s;
+}
+.field input::placeholder { color: var(--text-3); }
+.field input:focus { border-color: oklch(62% .13 52 / .5); }
+
+.players { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+.btn-save {
+  margin-top: 8px; width: 100%;
+  font-family: var(--font-u); font-size: 0.85rem; font-weight: 500;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  background: transparent; border: 1px solid var(--copper);
+  color: var(--copper); padding: 14px; border-radius: var(--r);
+  cursor: pointer; transition: background .18s, color .18s;
+}
+.btn-save:hover { background: var(--copper); color: var(--bg); }
+
+.supabase-note {
+  margin-top: 32px; padding: 16px; background: var(--surface);
+  border-radius: var(--r); border: 1px solid var(--border);
+  font-size: 0.78rem; color: var(--text-3); line-height: 1.6;
+}
+.supabase-note strong { color: var(--text-2); }
+.supabase-note a { color: var(--copper); text-decoration: none; }
+.supabase-note a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="eyebrow">Virtual DM</p>
+  <h1>First-time setup</h1>
+  <p class="subtitle">Configure your API keys and player names. Saved locally to <code style="font-size:.85em;color:var(--copper-dim)">~/.virtualdm/config.json</code> — never transmitted anywhere.</p>
+
+  <form method="POST" action="/setup">
+
+    <div class="section">
+      <p class="section-label">AI Keys</p>
+
+      <div class="field">
+        <label for="anthropic_key">Anthropic API Key <span style="color:var(--copper)">*</span></label>
+        <input type="password" id="anthropic_key" name="anthropic_key" value="" placeholder="sk-ant-…" autocomplete="off" required>
+        <p class="hint">Powers the DM. Get one at <a href="https://console.anthropic.com" target="_blank" style="color:var(--copper)">console.anthropic.com</a>.</p>
+      </div>
+
+      <div class="field">
+        <label for="openai_key">OpenAI API Key</label>
+        <input type="password" id="openai_key" name="openai_key" value="" placeholder="sk-…" autocomplete="off">
+        <p class="hint">Powers DM voice (onyx) and scene/map images. Optional but recommended. ~$1–2 per session total. <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--copper)">platform.openai.com</a></p>
+      </div>
+    </div>
+
+    <div class="section">
+      <p class="section-label">Database — Supabase</p>
+
+      <div class="field">
+        <label for="supabase_url">Database URL <span style="color:var(--copper)">*</span></label>
+        <input type="text" id="supabase_url" name="supabase_url" value="" placeholder="postgresql://postgres:…@db.xxxx.supabase.co:5432/postgres" autocomplete="off" required>
+      </div>
+
+      <div class="field">
+        <label for="supabase_service_key">Service Role Key <span style="color:var(--copper)">*</span></label>
+        <input type="password" id="supabase_service_key" name="supabase_service_key" value="" placeholder="eyJhbGci…" autocomplete="off" required>
+        <p class="hint">Found in Supabase → Settings → API.</p>
+      </div>
+
+      <div class="field">
+        <label for="default_campaign_id">Default Campaign ID</label>
+        <input type="text" id="default_campaign_id" name="default_campaign_id" value="" placeholder="UUID of the campaign to load">
+        <p class="hint">Leave blank to pick from the campaign list on the main screen.</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <p class="section-label">Players</p>
+      <div class="players">
+        <div class="field">
+          <label for="player1_name">Player 1 name</label>
+          <input type="text" id="player1_name" name="player1_name" value="" placeholder="Jeff">
+        </div>
+        <div class="field">
+          <label for="player2_name">Player 2 name</label>
+          <input type="text" id="player2_name" name="player2_name" value="" placeholder="Julee">
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-save">Save &amp; Start Playing</button>
+
+  </form>
+
+  <div class="supabase-note">
+    <strong>New to Supabase?</strong> Create a free account at <a href="https://supabase.com" target="_blank">supabase.com</a>,
+    create a project, run <code>db/schema.sql</code> and the migrations in <code>db/migrations/</code>,
+    then paste your connection string and service key above.
+    The free tier is enough for years of play.
+  </div>
+</div>
+</body>
+</html>

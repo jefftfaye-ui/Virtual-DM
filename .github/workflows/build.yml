@@ -1,0 +1,51 @@
+name: Build binaries
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: VirtualDM-mac
+          - os: ubuntu-latest
+            artifact: VirtualDM-linux
+          - os: windows-latest
+            artifact: VirtualDM-win.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]" pyinstaller
+
+      - name: Build binary
+        run: python build.py
+
+      - name: Rename artifact (unix)
+        if: runner.os != 'Windows'
+        env:
+          ARTIFACT: ${{ matrix.artifact }}
+        run: mv dist/VirtualDM "dist/$ARTIFACT"
+
+      - name: Rename artifact (windows)
+        if: runner.os == 'Windows'
+        env:
+          ARTIFACT: ${{ matrix.artifact }}
+        run: Rename-Item dist\VirtualDM.exe "dist\$env:ARTIFACT"
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}

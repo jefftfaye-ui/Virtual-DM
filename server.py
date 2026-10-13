@@ -32,7 +32,9 @@ from tools import sessions as t_sessions
 from tools import state as t_state
 from tools import world as t_world
 
-load_dotenv()
+import dm_config as _config
+_config.load()   # ~/.virtualdm/config.json → os.environ
+load_dotenv()    # .env fallback (dev)
 
 CONNECTOR_SECRET = os.environ.get("CONNECTOR_SECRET")
 if not CONNECTOR_SECRET or len(CONNECTOR_SECRET) < 24:
@@ -496,10 +498,88 @@ async def context_handler(request: Request) -> Response:
 
 
 async def ui_handler(request: Request) -> HTMLResponse:
+    if not _config.is_configured():
+        from starlette.responses import RedirectResponse
+        return RedirectResponse("/setup")
     path = Path(__file__).parent / "ui" / "index.html"
     if not path.exists():
         return HTMLResponse("<h1>UI not found — run from dm-server/</h1>", status_code=404)
-    return HTMLResponse(path.read_text(encoding="utf-8"))
+    # Inject player names from config into the page
+    html = path.read_text(encoding="utf-8")
+    p1 = _config.get("player1_name", "Jeff")
+    p2 = _config.get("player2_name", "Julee")
+    html = html.replace('"Jeff"', f'"{p1}"', 4).replace('"Julee"', f'"{p2}"', 4)
+    return HTMLResponse(html)
+
+
+async def setup_handler(request: Request) -> Response:
+    """GET: setup page. POST: save config and redirect to /ui."""
+    if request.method == "POST":
+        try:
+            form = await request.form()
+            data = {k: form.get(k, "").strip() for k in [
+                "anthropic_key", "openai_key", "supabase_url", "supabase_service_key",
+                "connector_secret", "default_campaign_id", "player1_name", "player2_name",
+            ]}
+            if not data.get("connector_secret"):
+                import secrets
+                data["connector_secret"] = secrets.token_urlsafe(32)
+            _config.save(data)
+            _config.load()  # re-apply to os.environ
+            from starlette.responses import RedirectResponse
+            return RedirectResponse("/ui", status_code=303)
+        except Exception as e:
+            return Response(f"Error saving config: {e}", status_code=500)
+
+    path = Path(__file__).parent / "ui" / "setup.html"
+    if not path.exists():
+        return HTMLResponse("<h1>setup.html not found</h1>", status_code=404)
+    # Pre-fill existing values
+    cfg = {}
+    try:
+        import dm_config
+        if dm_config.CONFIG_FILE.exists():
+            import json as _json
+            cfg = _json.loads(dm_config.CONFIG_FILE.read_text())
+    except Exception:
+        pass
+    html = path.read_text(encoding="utf-8")
+    for key, val in cfg.items():
+        if val and "key" not in key.lower():  # don't pre-fill secrets in HTML
+            html = html.replace(f'name="{key}" value=""', f'name="{key}" value="{val}"')
+        if val and key == "player1_name":
+            html = html.replace('name="player1_name" value=""', f'name="player1_name" value="{val}"')
+        if val and key == "player2_name":
+            html = html.replace('name="player2_name" value=""', f'name="player2_name" value="{val}"')
+    return HTMLResponse(html)
+
+
+async def speak_handler(request: Request) -> Response:
+    """POST {text} → OpenAI TTS MP3 stream. Falls back to 404 if no key."""
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if not openai_key:
+        return Response(status_code=204)  # no content — UI falls back to Web Speech
+    try:
+        body = await request.json()
+    except Exception:
+        return Response(status_code=400)
+
+    text = (body.get("text") or "").strip()[:4096]
+    if not text:
+        return Response(status_code=400)
+
+    try:
+        client = _openai.AsyncOpenAI()
+        resp = await client.audio.speech.create(
+            model="tts-1",
+            voice="onyx",
+            input=text,
+            response_format="mp3",
+        )
+        audio_bytes = resp.content
+        return Response(content=audio_bytes, media_type="audio/mpeg")
+    except Exception as e:
+        return Response(json.dumps({"error": str(e)}), status_code=500, media_type="application/json")
 
 
 # ─── state handler ────────────────────────────────────────────────────────────
@@ -677,6 +757,8 @@ _mcp_inner = mcp.streamable_http_app()
 app = Starlette(
     routes=[
         Route("/ui", endpoint=ui_handler),
+        Route("/setup", endpoint=setup_handler, methods=["GET", "POST"]),
+        Route("/api/speak", endpoint=speak_handler, methods=["POST"]),
         Route("/api/campaigns", endpoint=campaigns_handler),
         Route("/api/state", endpoint=state_handler),
         Route("/api/messages", endpoint=messages_handler),
