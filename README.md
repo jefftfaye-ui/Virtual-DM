@@ -1,211 +1,235 @@
-# dm-server
+# Virtual DM
 
-AI Dungeon Master MCP server. Honest dice, persistent campaign state, SRD rules lookup,
-D&D Beyond character import. See `../SPEC.md` for the full design.
+An AI Dungeon Master for two players. Claude narrates and runs the story. The server enforces rules — honest dice, tracked HP, spell slots, conditions, combat, death saves — so the DM never has to remember them.
 
-## Status
+Supports voice narration, AI-generated scene art and tactical maps, session history, and D&D Beyond character import.
 
-- ✅ Phase 1: dice parser + roller, DB schema, rules modules (damage, death, rest, exhaustion,
-  concentration, turn order), MCP server skeleton — 31 tools registered.
-- ✅ Phase 2: state tools (get_state, update_character, death_save, rest, set_scene, undo),
-  session tools (start/end session, recent events).
-- ✅ Phase 3: combat (start_encounter, add_combatant, update_combatant, next_turn, end_encounter).
-  Full effect ticking, death_save_due, initiative tiebreaks.
-- ✅ Phase 4: world tools — NPCs (knows hidden), locations, secrets (scoped-only), quests,
-  clocks (consequence on fill only), lore FTS.
-- ✅ Phase 5: SRD ingest (5e-bits/5e-database, CC-BY-4.0), lookup_rule (3-stage), lookup_monster
-  (full stat block + structured meta), statblock_ref wired into start_encounter.
-- ✅ Phase 6: DDB import — charactercheck 0.7.0 verified on PyPI; derive.py extracts
-  abilities/saves/skills/max_hp/slots/hit_dice; HP ratio preserved on re-import;
-  overrides always win; AC intentionally not derived (use overrides).
-- 🚧 Phase 7: Deploy to Fly.io, claude.ai custom connector.
-- 🚧 Phase 7: Deploy to Fly.io, claude.ai custom connector.
+---
 
-## Setup
+## What you need
 
+| Requirement | Notes |
+|---|---|
+| [Anthropic API key](https://console.anthropic.com) | Powers the DM. ~$3–5 per 2-hour session on Opus. |
+| [OpenAI API key](https://platform.openai.com/api-keys) | Optional. Powers voice (onyx) + scene/map images. ~$1–2 per session. |
+| [Supabase account](https://supabase.com) | Free tier. Stores campaign state, sessions, messages. |
+| Python 3.12+ | For running from source. Not needed for the binary. |
+
+---
+
+## Option A — Download the binary (easiest)
+
+Download the latest release for your platform from the [Releases](../../releases) page:
+
+- `VirtualDM-mac` — macOS (Apple Silicon + Intel)
+- `VirtualDM-linux` — Linux x86_64
+- `VirtualDM-win.exe` — Windows 10/11
+
+**Mac/Linux:** make it executable first:
 ```bash
-cp .env.example .env
-# edit .env: SUPABASE_URL, SUPABASE_SERVICE_KEY, CONNECTOR_SECRET (≥32 random bytes URL-safe)
-python -m venv .venv && source .venv/bin/activate
-pip install -e '.[dev]'
+chmod +x VirtualDM-mac
+./VirtualDM-mac
 ```
 
-Apply DB schema + migrations:
+**Windows:** double-click `VirtualDM-win.exe`.
+
+A browser window opens automatically at the setup screen.
+
+---
+
+## Option B — Run from source
 
 ```bash
-psql "$SUPABASE_URL" -f db/schema.sql
-psql "$SUPABASE_URL" -f db/migrations/0001_current_location.sql
-psql "$SUPABASE_URL" -f db/migrations/0002_encounter_turn_init.sql
-psql "$SUPABASE_URL" -f db/migrations/0003_srd_meta.sql
+git clone https://github.com/jefftfaye-ui/Virtual-DM.git
+cd Virtual-DM/dm-server
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e .
+python launcher.py
 ```
 
-## SRD ingest
+---
 
-**Source:** `5e-bits/5e-database` — CC-BY-4.0, SRD 5.1 content only.
-Repo: https://github.com/5e-bits/5e-database
+## First-time setup
+
+The setup screen (`http://localhost:8080/setup`) opens automatically on first run.
+
+Fill in:
+
+1. **Anthropic API Key** — from [console.anthropic.com](https://console.anthropic.com)
+2. **OpenAI API Key** — optional, from [platform.openai.com](https://platform.openai.com/api-keys)
+3. **Supabase Database URL** — `postgresql://postgres:PASSWORD@db.YOURREF.supabase.co:5432/postgres`
+4. **Supabase Service Role Key** — from your Supabase project → Settings → API
+5. **Player names** — defaults to Jeff and Julee. Change to whatever you want.
+
+Settings are saved to `~/.virtualdm/config.json` on your machine. Never transmitted anywhere.
+
+### Setting up Supabase
+
+1. Create a free account at [supabase.com](https://supabase.com)
+2. Create a new project (any region, any password)
+3. Go to Settings → Database → Connection string, copy the URI
+4. Go to Settings → API, copy the `service_role` key
+5. Apply the database schema (one-time setup, see below)
+
+---
+
+## Database schema setup
+
+This is a one-time step. You need `psql` installed ([download](https://www.postgresql.org/download/)).
 
 ```bash
-# Download + ingest 5.1 from network (requires internet):
-python scripts/ingest_srd.py --edition 2014
+cd dm-server    # or wherever you cloned the repo
 
-# From local clone:
-python scripts/ingest_srd.py --edition 2014 --from /path/to/5e-database/src
+export DB="postgresql://postgres:PASSWORD@db.YOURREF.supabase.co:5432/postgres"
 
-# Wipe and re-ingest (idempotent):
-python scripts/ingest_srd.py --edition 2014 --wipe
+psql "$DB" -f db/schema.sql
+psql "$DB" -f db/migrations/0001_current_location.sql
+psql "$DB" -f db/migrations/0002_encounter_turn_init.sql
+psql "$DB" -f db/migrations/0003_srd_meta.sql
+psql "$DB" -f db/migrations/0004_messages.sql
+psql "$DB" -f db/migrations/0005_session_summary.sql
 ```
 
-**5.2 (2024 edition):** No structured community conversion confirmed yet. When one exists,
-verify it is SRD-only and CC-BY-4.0, then run with `--edition 2024 --from <local dir>`.
-Fall back to PDF extraction via `pdfplumber` if needed (see SPEC §6).
+---
 
-## Run tests
+## Create your first campaign
 
 ```bash
-pytest -q
-# 107 pass (unit) + N skipped (integration — need SUPABASE_URL)
+# From the dm-server directory with venv active:
+PYTHONPATH=. python scripts/seed_campaign.py --name "Your Campaign Name" --edition 2014
 
-# With DB:
-SUPABASE_URL=postgresql://... pytest -q
+# Copy the printed DEFAULT_CAMPAIGN_ID into the setup screen
 ```
 
-Test coverage:
-- `test_dice.py` — parser, 10k-roll bounds, kh/kl, advantage/disadvantage
-- `test_damage.py` — full damage pipeline
-- `test_death.py` — death save resolution
-- `test_rest.py` — short/long rest by edition
-- `test_turn_order.py` — initiative sort, tiebreak, skip logic
-- `test_state_logic.py` — slot/resource/hit-die overspend refusal, condition merge
-- `test_statblock.py` — normalize_name, extract_monster_meta, format_monster_body
-- `test_integration_state.py` — state/session tools (needs DB)
-- `test_integration_combat.py` — full §7.3 scripted fight (needs DB)
-- `test_integration_world.py` — world tools, secret scoping (needs DB)
-- `test_integration_rules.py` — SRD lookup 3 stages, statblock_ref in start_encounter (needs DB)
+This creates the campaign and seeds starter lore. Update the Campaign ID in the setup screen, then restart.
 
-## Run server (dev)
+---
+
+## Import characters from D&D Beyond
+
+Characters must be set to **Public** on D&D Beyond.
 
 ```bash
-python server.py
-# serves at http://localhost:8080/mcp/{CONNECTOR_SECRET}
+# Run from a laptop (cloud IPs are often blocked by D&D Beyond):
+PYTHONPATH=. python scripts/import_ddb.py https://www.dndbeyond.com/characters/ID Player1Name \
+  --campaign-id YOUR_CAMPAIGN_ID
+
+PYTHONPATH=. python scripts/import_ddb.py https://www.dndbeyond.com/characters/ID Player2Name \
+  --campaign-id YOUR_CAMPAIGN_ID
 ```
 
-## DDB character import
+After import, set AC manually — it can't be derived reliably from D&D Beyond:
 
-**P6.1 — charactercheck lib:** `charactercheck 0.7.0` exists on PyPI and verified.
-Used as primary derivation engine. Falls back to manual derivation on validation failure.
+Tell the DM in the game: `"Set [CharacterName]'s AC to 16"` — it will call the right tool.
 
-**What is derived:** abilities, proficiency_bonus, saves, skills, max_hp (from DDB's
-hitPointInfo), spell_slots, pact_slots (Warlock), hit_dice, level, class_summary, speed.
+**What's imported automatically:** ability scores, saving throws, skills, max HP, spell slots, pact slots (Warlock), hit dice, level, speed.
 
-**What is NOT derived:** `ac` — too many edge cases (magic items, Unarmored Defense, etc.).
-Set via `update_character(overrides={"ac": N})` after import.
+**Re-import after leveling up:** run the same command again. HP ratio is preserved; your edits survive.
+
+---
+
+## Ingest the SRD (optional but recommended)
+
+Gives the DM access to monster stat blocks, spell descriptions, and rules lookups.
 
 ```bash
-# From a laptop (datacenter IPs often blocked):
-python scripts/import_ddb.py https://www.dndbeyond.com/characters/12345 Jeff
-
-# Dry run to see what would be derived:
-python scripts/import_ddb.py 12345 Jeff --dry-run
-
-# Re-import after level-up (preserves HP ratio and overrides):
-python scripts/import_ddb.py 12345 Jeff
-
-# Full reset (fresh HP, conditions, slots):
-python scripts/import_ddb.py 12345 Jeff --reset-live-state
+PYTHONPATH=. python scripts/ingest_srd.py --edition 2014
 ```
 
-Mismatches between derived and existing values are printed, not hidden.
-Fix with: `update_character(overrides={"field": value})`
+Downloads ~900 entries from the D&D 5.1 System Reference Document (CC-BY-4.0).
 
-## Seed a campaign
+---
+
+## Playing
+
+1. Start the server: `python launcher.py` (or run the binary)
+2. Open `http://localhost:8080/ui` in your browser
+3. Select your campaign
+4. Click **Begin Session**
+
+The DM opens the scene. Jeff types in the left input, Julee in the right. Send with Enter or the arrow button. Hold the mic button to speak.
+
+### Voice narration
+
+Click the **🔇** button in the top bar to enable DM voice. With an OpenAI key configured, the DM uses the `onyx` voice (deep, cinematic). Without it, falls back to your system's text-to-speech.
+
+### Scene art
+
+When the DM sets a new location, a scene image appears automatically in the center panel (requires OpenAI key).
+
+### Maps
+
+Type a description in the map box and click **Map it** to generate a top-down tactical map. The DM can also trigger this automatically when handing the party a map.
+
+### Ending a session
+
+Tell the DM: `"End the session"` — it will save a recap and generate a summary for next time. Next session picks up from where you left off.
+
+---
+
+## Customization
+
+### Change player names
+
+Open `http://localhost:8080/setup` and update the player name fields. Restart.
+
+### Change campaigns
+
+The campaign picker shows all active campaigns. To add a new one:
 
 ```bash
-python scripts/seed_campaign.py --name "Stormwreck Isle" --edition 2014
-# Prints DEFAULT_CAMPAIGN_ID → add to .env
-# Then import characters + ingest SRD as instructed
+PYTHONPATH=. python scripts/seed_campaign.py --name "New Campaign" --edition 2014
 ```
 
-## Deploy
+### Monster HP mode
 
-Target Fly.io (avoids serverless cold-start timeouts on long tool calls).
+Edit the campaign settings in Supabase (`campaigns.settings`):
+- `"monster_hp_mode": "average"` — monsters use the listed average HP (default)
+- `"monster_hp_mode": "rolled"` — monsters roll their hit dice on spawn
 
-### First deploy
+### Rules edition
+
+Set `RULES_EDITION=2024` in the setup screen or config file for D&D 2024 rules (hit dice recovery, exhaustion, concentration DCs differ).
+
+### Tone and world
+
+The DM's behavior is guided by its system prompt in `server.py`. You can edit `_DM_SYSTEM` to change its style, add setting-specific rules, or adjust narration tone.
+
+Lines and veils (content you want off-limits or off-screen) live in the campaign's `dm_only` lore entries. Add them with:
+
+```
+Tell the DM: "Add a dm-only lore entry: [your lines and veils]"
+```
+
+---
+
+## Building binaries yourself
 
 ```bash
-fly launch            # creates app, detects Dockerfile
-fly secrets set \
-  SUPABASE_URL="postgresql://..." \
-  SUPABASE_SERVICE_KEY="..." \
-  CONNECTOR_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-  DEFAULT_CAMPAIGN_ID="<uuid from seed_campaign.py>" \
-  RULES_EDITION="2014"
-fly deploy
+pip install pyinstaller
+python build.py
+# Output: dist/VirtualDM
 ```
 
-### Verify schema budget before deploy
+To build for all platforms automatically, push a git tag (e.g. `v1.0.0`) to GitHub. The Actions workflow produces Mac, Linux, and Windows binaries as downloadable artifacts.
 
-```bash
-PYTHONPATH=. python scripts/measure_schema.py
-# Must print "✓ Within budget." — target ≤ 6k tokens
-# Current: ~5,363 tokens (31 tools)
-```
+---
 
-### Connect to claude.ai
+## Costs
 
-1. Open claude.ai → Settings → Custom Connectors
-2. Add connector URL: `https://<fly-app>.fly.dev/mcp/<CONNECTOR_SECRET>`
-3. Enable the connector in your DM Project
-4. Apply **all** SPEC §8 Project instruction changes:
-   - Speaker labels (`Jeff:` / `Julee:` prefix required)
-   - Missing-server fallback ("say so out of character if tools unavailable")
-   - `death_save` tool for death saves (not `roll`)
-   - Concentration follow-up when `concentration_check` returned
-   - Secret rolls via `roll(visibility="secret", dc=…)`
-   - `get_npc(dm_view=true)` only when NPC shares information
-   - Lines and veils filled in (stored in `dm_only` lore, not instructions)
+| Service | What for | Rough cost |
+|---|---|---|
+| Anthropic | DM (claude-opus-4-7) | ~$3–5 per 2hr session |
+| OpenAI TTS | DM voice (onyx) | ~$0.30 per session |
+| OpenAI Images | Scene art + maps | ~$0.50–1.00 per session |
+| Supabase | Database | Free tier (no cost) |
 
-### Secret rotation runbook
+Sessions get cheaper over time as prior sessions are summarized and cached.
 
-**Run quarterly or on suspected exposure:**
-
-```bash
-NEW_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
-fly secrets set CONNECTOR_SECRET="$NEW_SECRET"
-fly deploy
-# Then update the connector URL in claude.ai Settings → Custom Connectors
-```
-
-### Log redaction
-
-Fly.io logs the full request path including the connector secret. Options:
-- Use Fly's log shipping to a private drain with server-side redaction
-- Or accept the risk and rotate the secret if logs are ever exposed
-
-### Backup
-
-Supabase provides automatic daily backups. For manual snapshot:
-
-```bash
-pg_dump "$SUPABASE_URL" --no-owner -F c -f backup_$(date +%Y%m%d).dump
-```
-
-### Subsequent deploys
-
-```bash
-fly deploy    # rebuilds image, zero-downtime swap
-```
-
-## Schema migrations
-
-Run in order after applying `db/schema.sql`:
-
-| File | What it adds |
-|------|--------------|
-| `0001_current_location.sql` | `campaigns.current_location_id` for set_scene |
-| `0002_encounter_turn_init.sql` | `encounters.turn_index` default −1 |
-| `0003_srd_meta.sql` | `srd_chunks.meta jsonb` for structured monster stats |
+---
 
 ## Attribution
 
-Content from the D&D 5.1 System Reference Document, Wizards of the Coast, CC-BY-4.0.
-Source: https://github.com/5e-bits/5e-database (CC-BY-4.0, SRD-only).
+Includes content from the D&D 5.1 System Reference Document, Wizards of the Coast, CC-BY-4.0.
+SRD source: [5e-bits/5e-database](https://github.com/5e-bits/5e-database) (CC-BY-4.0, SRD-only content).
