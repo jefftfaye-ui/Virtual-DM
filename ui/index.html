@@ -1258,6 +1258,11 @@ async function sendToDM(speaker, text) {
         } else if (evt.type === 'tool_result') {
           finishStream();
           appendToolEvent(evt.name, evt.result || {});
+          // Generate map when DM calls generate_map tool
+          if (evt.name === 'generate_map' && evt.result?.map_queued) {
+            generateMap(evt.result.description || '', evt.result.location || '');
+            if (evt.result.location) $('map-prompt-input').placeholder = `Map the ${evt.result.location}…`;
+          }
           // Generate scene art when set_scene fires
           if (evt.name === 'set_scene' && evt.result) {
             const desc = evt.result.description || '';
@@ -1279,6 +1284,8 @@ async function sendToDM(speaker, text) {
               body: JSON.stringify({ campaign_id: campaignId, session_id: sessionId }),
             }).catch(() => {});
           }
+        } else if (evt.type === 'map_request') {
+          generateMap(evt.description || '', evt.location || '');
         } else if (evt.type === 'session_started') {
           sessionId = evt.session_id;
         } else if (evt.type === 'state_update') {

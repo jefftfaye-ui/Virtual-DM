@@ -119,7 +119,22 @@ mcp.tool()(t_sessions.start_session)
 mcp.tool()(t_sessions.end_session)
 mcp.tool()(t_sessions.get_recent_events)
 
-# Total: 31 tools
+
+@mcp.tool()
+async def generate_map(
+    description: str,
+    location: str | None = None,
+) -> dict:
+    """Render a top-down tactical map in the player interface.
+    Call whenever the party receives a map, scouts a location, or a map is
+    narratively relevant. description: what to map (rooms, layout, features).
+    location: optional name label (e.g. 'Cinderquay Warehouse')."""
+    # Fires the map panel — result is displayed in the UI, not returned as text.
+    # Return a brief confirmation so the DM knows it was sent.
+    return {"map_queued": True, "description": description, "location": location or ""}
+
+
+# Total: 32 tools
 
 
 # ─── DM system prompt ─────────────────────────────────────────────────────────
@@ -139,8 +154,17 @@ RULES:
 SCENE TOOL — IMPORTANT:
 Call `set_scene` every time the party enters a new location or the scene meaningfully changes (a new room, outdoor area, building interior, etc.). The interface automatically generates a visual of the scene from your description — you do not need to produce images yourself and never need to mention images or visuals. Just call `set_scene` with a vivid description and the system handles the rest silently. Call it at session start too.
 
-VISUALS — NEVER MENTION:
-The player interface has a separate map and scene image panel that players control directly. You have no image tools. Never tell players you cannot generate images, cannot show visuals, or cannot produce maps. Never offer to "generate" or "display" anything visual. Simply narrate. If a player asks to see a map of a location, describe it in words and move on. The visual tools are the players' business, not yours.
+MAP TOOL:
+Call `generate_map(description, location)` whenever a map is narratively relevant:
+- A party receives a physical map (Varric's warehouse floor plan, a dungeon sketch, a city district)
+- The party scouts or cases a location and would logically picture it
+- A map already exists in the fiction and a player asks to see it
+- Any time showing a map would help the players make a decision
+
+description: describe rooms, layout, key features, connections. Be specific — this generates the image.
+location: the name ("Cinderquay Warehouse 3"). Optional but always include when known.
+
+Never tell players you are generating a map or that a map is appearing. Just call the tool and continue narrating. The image appears silently in their interface.
 
 NARRATION:
 Vivid, present-tense. Short action sentences. Describe consequences and set scenes — never narrate player actions for them. Leave space for decisions. Give every scene a sensory detail that grounds it."""
@@ -180,6 +204,7 @@ _DISPATCH: dict = {
     "lookup_rule": t_rules.lookup_rule,
     "lookup_monster": t_rules.lookup_monster,
     "import_ddb_character": t_ddb.import_ddb_character,
+    "generate_map": generate_map,
 }
 
 
@@ -611,6 +636,9 @@ async def chat_handler(request: Request) -> StreamingResponse:
                             "tool_use_id": block.id,
                             "content": result_str,
                         })
+                        # generate_map: pass description to UI map panel
+                        if block.name == "generate_map" and isinstance(result, dict) and result.get("map_queued"):
+                            yield f"data: {json.dumps({'type': 'map_request', 'description': result.get('description',''), 'location': result.get('location','')})}\n\n"
                         # Capture session_id when start_session fires
                         if block.name == "start_session" and isinstance(result, dict) and result.get("session_id"):
                             session_id = result["session_id"]
