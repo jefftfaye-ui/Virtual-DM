@@ -151,6 +151,8 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   background: var(--surface); border-left: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
 }
+
+/* scene image — top half */
 #scene-art-wrap {
   flex: 1; position: relative; overflow: hidden;
   background: oklch(13% 0.01 55);
@@ -179,9 +181,57 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 }
 .art-empty-icon { font-size: 2rem; opacity: 0.2; }
 .art-empty-label { font-size: 0.68rem; color: var(--text-3); text-align: center; max-width: 20ch; }
-#scene-info-bar {
-  padding: 10px 14px; border-top: 1px solid var(--border-sub);
+
+/* map section — bottom half */
+#map-section {
+  flex: 1; display: flex; flex-direction: column;
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+#map-art-wrap {
+  flex: 1; position: relative; overflow: hidden;
+  background: oklch(12% 0.008 55);
+  display: flex; align-items: center; justify-content: center;
+}
+#map-img {
+  width: 100%; height: 100%;
+  object-fit: contain; object-position: center;
+  transition: opacity 0.5s;
+}
+#map-loading {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px;
+}
+#map-placeholder {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px;
+  opacity: 0.5;
+}
+#map-controls {
+  flex-shrink: 0; padding: 8px 10px; display: flex; gap: 6px;
+  border-top: 1px solid var(--border-sub);
   background: var(--surface);
+}
+#map-prompt-input {
+  flex: 1; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); color: var(--text); font-family: var(--font-u);
+  font-size: 0.78rem; padding: 6px 10px; outline: none;
+  transition: border-color .15s;
+}
+#map-prompt-input::placeholder { color: var(--text-3); }
+#map-prompt-input:focus { border-color: oklch(62% .13 52 / .4); }
+#map-gen-btn {
+  font-size: 0.72rem; font-weight: 500; letter-spacing: 0.06em;
+  padding: 6px 12px; border-radius: var(--r); cursor: pointer;
+  background: transparent; border: 1px solid var(--copper-dim);
+  color: var(--copper-dim); transition: all .15s; white-space: nowrap;
+}
+#map-gen-btn:hover:not(:disabled) { background: var(--copper-glow); border-color: var(--copper); color: var(--copper); }
+#map-gen-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+#scene-info-bar {
+  padding: 8px 14px; border-top: 1px solid var(--border-sub);
+  background: var(--surface); flex-shrink: 0;
 }
 .scene-loc { font-size: 0.78rem; font-weight: 500; color: var(--text-2); margin-bottom: 2px; }
 .scene-date { font-size: 0.65rem; color: var(--text-3); }
@@ -324,10 +374,29 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
         <span class="art-spinner-label">Painting scene…</span>
       </div>
       <div id="scene-art-placeholder">
-        <span class="art-empty-icon">🗺</span>
+        <span class="art-empty-icon">🎨</span>
         <span class="art-empty-label">Scene art appears when DM sets a location</span>
       </div>
     </div>
+
+    <div id="map-section">
+      <div id="map-art-wrap">
+        <img id="map-img" style="display:none;opacity:0" alt="Area map">
+        <div id="map-loading" style="display:none">
+          <div class="art-spinner"></div>
+          <span class="art-spinner-label">Drawing map…</span>
+        </div>
+        <div id="map-placeholder">
+          <span class="art-empty-icon">🗺</span>
+          <span class="art-empty-label">Map this area</span>
+        </div>
+      </div>
+      <div id="map-controls">
+        <input id="map-prompt-input" type="text" placeholder="Describe area to map… (e.g. warehouse ground floor)">
+        <button id="map-gen-btn">Map it</button>
+      </div>
+    </div>
+
     <div id="scene-info-bar">
       <div class="scene-loc" id="art-loc-name">—</div>
       <div class="scene-date" id="art-date"></div>
@@ -1012,6 +1081,48 @@ function updateInventorySidebar(party) {
   }
 }
 
+// ── map generation ────────────────────────────────────────────────────────────
+
+async function generateMap(description, location) {
+  if (!description) return;
+  const placeholder = $('map-placeholder');
+  const loading = $('map-loading');
+  const img = $('map-img');
+  const btn = $('map-gen-btn');
+
+  placeholder.style.display = 'none';
+  img.style.display = 'none';
+  img.style.opacity = '0';
+  loading.style.display = 'flex';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch('/api/map-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description, location }),
+    });
+    const data = await r.json();
+    if (data.url) {
+      img.src = data.url;
+      img.onload = () => {
+        loading.style.display = 'none';
+        img.style.display = 'block';
+        requestAnimationFrame(() => { img.style.opacity = '1'; });
+      };
+      img.onerror = () => { loading.style.display = 'none'; placeholder.style.display = 'flex'; };
+    } else {
+      loading.style.display = 'none';
+      placeholder.style.display = 'flex';
+    }
+  } catch {
+    loading.style.display = 'none';
+    placeholder.style.display = 'flex';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ── TTS ───────────────────────────────────────────────────────────────────────
 let _voices = [];
 function _loadVoices() {
@@ -1153,6 +1264,12 @@ async function sendToDM(speaker, text) {
             const loc = evt.result.location || '';
             generateSceneImage(desc, loc);
             updateScenePanel({ description: desc, location: loc });
+            // Pre-fill map prompt with location name
+            if (loc) {
+              const mapInput = $('map-prompt-input');
+              if (!mapInput.value) setText(mapInput, '');
+              mapInput.placeholder = `Map the ${loc}…`;
+            }
           }
           // Auto-generate summary when end_session fires (background, no await)
           if (evt.name === 'end_session' && sessionId && campaignId) {
@@ -1247,6 +1364,17 @@ wirePlayer('Jeff',  'ta-jeff',  'mic-jeff',  'send-jeff');
 wirePlayer('Julee', 'ta-julee', 'mic-julee', 'send-julee');
 
 $('btn-begin').addEventListener('click', beginSession);
+
+// Map generator
+$('map-gen-btn').addEventListener('click', () => {
+  const desc = $('map-prompt-input').value.trim();
+  if (!desc) return;
+  const loc = $('art-loc-name').textContent !== '—' ? $('art-loc-name').textContent : '';
+  generateMap(desc, loc);
+});
+$('map-prompt-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('map-gen-btn').click();
+});
 
 // TTS toggle
 $('tts-toggle').addEventListener('click', () => {

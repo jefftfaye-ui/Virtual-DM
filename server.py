@@ -266,6 +266,47 @@ async def messages_handler(request: Request) -> Response:
         return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
 
 
+async def _generate_image(prompt: str, size: str = "1536x1024") -> dict:
+    """Shared image generation via gpt-image-1."""
+    client = _openai.AsyncOpenAI()
+    resp = await client.images.generate(model="gpt-image-1", prompt=prompt[:900], size=size, n=1)
+    img_data = resp.data[0]
+    if getattr(img_data, "url", None):
+        return {"url": img_data.url}
+    if getattr(img_data, "b64_json", None):
+        return {"url": f"data:image/png;base64,{img_data.b64_json}"}
+    return {"error": "no image returned"}
+
+
+async def map_image_handler(request: Request) -> Response:
+    """Generate a top-down tactical map from a description."""
+    try:
+        body = await request.json()
+    except Exception:
+        return Response(json.dumps({"error": "invalid JSON"}), status_code=400, media_type="application/json")
+
+    description = (body.get("description") or "").strip()
+    location = (body.get("location") or "").strip()
+    if not description and not location:
+        return Response(json.dumps({"error": "description required"}), media_type="application/json", status_code=400)
+
+    prompt = (
+        f"Top-down tactical RPG battle map. Hand-drawn fantasy cartography style. "
+        f"{'Location: ' + location + '. ' if location else ''}"
+        f"{description}. "
+        f"Ink on aged parchment, labeled rooms and areas, clear pathways, dungeon or "
+        f"wilderness map. No figures or characters. No UI. No text captions or titles."
+    )
+
+    try:
+        result = await _generate_image(prompt, size="1024x1024")
+        if "error" in result:
+            return Response(json.dumps(result), media_type="application/json", status_code=500)
+        return Response(json.dumps(result), media_type="application/json")
+    except Exception as e:
+        return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
+
+
 async def scene_image_handler(request: Request) -> Response:
     """Generate a DALL-E 3 scene image from a description."""
     try:
@@ -284,25 +325,13 @@ async def scene_image_handler(request: Request) -> Response:
         f"{description} "
         f"Dark atmospheric oil painting style, cinematic lighting, rich detail, "
         f"no characters in foreground, no text, no UI elements, no watermarks."
-    )[:900]  # DALL-E prompt limit
+    )
 
     try:
-        client = _openai.AsyncOpenAI()
-        resp = await client.images.generate(
-            model="gpt-image-1",
-            prompt=prompt,
-            size="1536x1024",  # landscape ~3:2, closest to 16:9 supported
-            n=1,
-        )
-        img_data = resp.data[0]
-        if getattr(img_data, "url", None):
-            url = img_data.url
-        elif getattr(img_data, "b64_json", None):
-            url = f"data:image/png;base64,{img_data.b64_json}"
-        else:
-            return Response(json.dumps({"error": "no image returned"}), media_type="application/json", status_code=500)
-        revised = getattr(img_data, "revised_prompt", None)
-        return Response(json.dumps({"url": url, "revised_prompt": revised}), media_type="application/json")
+        result = await _generate_image(prompt, size="1536x1024")
+        if "error" in result:
+            return Response(json.dumps(result), media_type="application/json", status_code=500)
+        return Response(json.dumps(result), media_type="application/json")
     except Exception as e:
         return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
 
@@ -623,6 +652,7 @@ app = Starlette(
         Route("/api/context", endpoint=context_handler),
         Route("/api/generate-summary", endpoint=generate_summary_handler, methods=["POST"]),
         Route("/api/scene-image", endpoint=scene_image_handler, methods=["POST"]),
+        Route("/api/map-image", endpoint=map_image_handler, methods=["POST"]),
         Route("/api/chat", endpoint=chat_handler, methods=["POST", "OPTIONS"]),
         Mount(MOUNT_PATH, app=_mcp_inner),
     ]
