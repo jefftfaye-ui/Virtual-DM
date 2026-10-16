@@ -4,10 +4,12 @@
 DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$DIR"
 
-# Server already up? Just open the UI.
-if nc -z localhost 8080 2>/dev/null; then
+# Server already up? Only trust the port if one of our own processes owns it.
+if nc -z localhost 8080 2>/dev/null && pgrep -U "$(id -u)" -f "launcher.py|server.py" >/dev/null; then
     open "http://localhost:8080/ui"
     exit 0
 fi
 
-exec "$DIR/.venv/bin/python" launcher.py >> /tmp/dm-server.log 2>&1
+LOG_DIR="$HOME/Library/Logs/VirtualDM"
+mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
+exec "$DIR/.venv/bin/python" launcher.py >> "$LOG_DIR/dm-server.log" 2>&1
