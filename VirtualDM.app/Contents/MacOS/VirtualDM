@@ -1,0 +1,13 @@
+#!/bin/zsh
+# Double-click launcher. App lives inside the dm-server folder; find it relative
+# to this script so the folder can move without breaking.
+DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$DIR"
+
+# Server already up? Just open the UI.
+if nc -z localhost 8080 2>/dev/null; then
+    open "http://localhost:8080/ui"
+    exit 0
+fi
+
+exec "$DIR/.venv/bin/python" launcher.py >> /tmp/dm-server.log 2>&1

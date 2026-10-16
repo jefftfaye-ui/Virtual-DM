@@ -48,6 +48,8 @@ pip install -e .
 python launcher.py
 ```
 
+**Mac:** after the one-time install above, you can skip the terminal — just double-click `VirtualDM.app` in the `dm-server` folder. It starts the server (or opens the game if it's already running).
+
 ---
 
 ## First-time setup
@@ -143,7 +145,7 @@ Downloads ~900 entries from the D&D 5.1 System Reference Document (CC-BY-4.0).
 
 ## Playing
 
-1. Start the server: `python launcher.py` (or run the binary)
+1. Start the server: `python launcher.py` (Mac: double-click `VirtualDM.app`, or run the binary)
 2. Open `http://localhost:8080/ui` in your browser
 3. Select your campaign
 4. Click **Begin Session**
