@@ -9,9 +9,11 @@ Routes:
 
 from __future__ import annotations
 
+import base64
 import inspect
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -296,7 +298,20 @@ async def messages_handler(request: Request) -> Response:
         return Response(json.dumps({"error": str(e)}), media_type="application/json", status_code=500)
 
 
-async def _generate_image(prompt: str, size: str = "1536x1024") -> dict:
+_ART_DIR = Path(__file__).parent / "generated_art"
+
+
+def _save_art(b64: str, kind: str) -> None:
+    """Best-effort: persist generated image to generated_art/. Never blocks generation."""
+    try:
+        _ART_DIR.mkdir(exist_ok=True)
+        fname = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{kind}.png"
+        (_ART_DIR / fname).write_bytes(base64.b64decode(b64))
+    except Exception:
+        pass
+
+
+async def _generate_image(prompt: str, size: str = "1536x1024", kind: str = "scene") -> dict:
     """Shared image generation via gpt-image-1."""
     client = _openai.AsyncOpenAI()
     resp = await client.images.generate(model="gpt-image-1", prompt=prompt[:900], size=size, n=1)
@@ -304,6 +319,7 @@ async def _generate_image(prompt: str, size: str = "1536x1024") -> dict:
     if getattr(img_data, "url", None):
         return {"url": img_data.url}
     if getattr(img_data, "b64_json", None):
+        _save_art(img_data.b64_json, kind)
         return {"url": f"data:image/png;base64,{img_data.b64_json}"}
     return {"error": "no image returned"}
 
@@ -329,7 +345,7 @@ async def map_image_handler(request: Request) -> Response:
     )
 
     try:
-        result = await _generate_image(prompt, size="1024x1024")
+        result = await _generate_image(prompt, size="1024x1024", kind="map")
         if "error" in result:
             return Response(json.dumps(result), media_type="application/json", status_code=500)
         return Response(json.dumps(result), media_type="application/json")
