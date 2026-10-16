@@ -512,6 +512,14 @@ async def ui_handler(request: Request) -> HTMLResponse:
     return HTMLResponse(html)
 
 
+async def favicon_handler(request: Request) -> Response:
+    path = Path(__file__).parent / "ui" / "favicon.png"
+    if not path.exists():
+        return Response(status_code=404)
+    return Response(path.read_bytes(), media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
 async def setup_handler(request: Request) -> Response:
     """GET: setup page. POST: save config and redirect to /ui."""
     if request.method == "POST":
@@ -758,6 +766,7 @@ app = Starlette(
     routes=[
         Route("/ui", endpoint=ui_handler),
         Route("/setup", endpoint=setup_handler, methods=["GET", "POST"]),
+        Route("/favicon.ico", endpoint=favicon_handler),
         Route("/api/speak", endpoint=speak_handler, methods=["POST"]),
         Route("/api/campaigns", endpoint=campaigns_handler),
         Route("/api/state", endpoint=state_handler),
