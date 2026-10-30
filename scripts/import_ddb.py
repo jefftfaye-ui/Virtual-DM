@@ -21,6 +21,12 @@ import json
 import os
 import sys
 
+import dm_config
+from dotenv import load_dotenv
+
+dm_config.load()   # ~/.virtualdm/config.json (saved by the /setup screen)
+load_dotenv()      # .env fallback, same as the server
+
 
 async def _main() -> int:
     parser = argparse.ArgumentParser(description="Import DDB character into dm-server.")

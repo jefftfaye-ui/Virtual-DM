@@ -24,6 +24,12 @@ import argparse
 import json
 import os
 import sys
+
+import dm_config
+from dotenv import load_dotenv
+
+dm_config.load()   # ~/.virtualdm/config.json (saved by the /setup screen)
+load_dotenv()      # .env fallback, same as the server
 import re
 from pathlib import Path
 from typing import Any

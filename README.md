@@ -10,101 +10,87 @@ Supports voice narration, AI-generated scene art and tactical maps, session hist
 
 | Requirement | Notes |
 |---|---|
+| Python 3.11 or newer | Check with `python3 --version`. [Download](https://www.python.org/downloads/) if you're older. |
 | [Anthropic API key](https://console.anthropic.com) | Powers the DM. ~$3–5 per 2-hour session on Opus. |
-| [OpenAI API key](https://platform.openai.com/api-keys) | Optional. Powers voice (onyx) + scene/map images. ~$1–2 per session. |
 | [Supabase account](https://supabase.com) | Free tier. Stores campaign state, sessions, messages. |
-| Python 3.12+ | For running from source. Not needed for the binary. |
+| [OpenAI API key](https://platform.openai.com/api-keys) | Optional. Powers voice (onyx) + scene/map images. ~$1–2 per session. |
+
+Prebuilt binaries aren't published yet, so everyone runs from source. It's five commands.
 
 ---
 
-## Option A — Download the binary (easiest)
-
-Download the latest release for your platform from the [Releases](../../releases) page:
-
-- `VirtualDM-mac` — macOS (Apple Silicon + Intel)
-- `VirtualDM-linux` — Linux x86_64
-- `VirtualDM-win.exe` — Windows 10/11
-
-**Mac/Linux:** make it executable first:
-```bash
-chmod +x VirtualDM-mac
-./VirtualDM-mac
-```
-
-**Windows:** double-click `VirtualDM-win.exe`.
-
-A browser window opens automatically at the setup screen.
-
----
-
-## Option B — Run from source
+## Step 1 — Install
 
 ```bash
 git clone https://github.com/jefftfaye-ui/Virtual-DM.git
-cd Virtual-DM/dm-server
-python -m venv .venv
+cd Virtual-DM
+python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e .
+```
+
+If `pip install` says the package "requires a different Python", your `python3` is older than 3.11. Install a newer one and create the venv with it, e.g. `python3.12 -m venv .venv`.
+
+---
+
+## Step 2 — Set up Supabase (the database)
+
+1. Create a free account at [supabase.com](https://supabase.com) and click **New project**. Any region. **Write down the database password you choose** — you need it below.
+2. Create the tables. Open **SQL Editor** in the left sidebar, then for each file below paste its contents and click **Run**. Do them in this order:
+   - `db/schema.sql`
+   - `db/migrations/0001_current_location.sql`
+   - `db/migrations/0002_encounter_turn_init.sql`
+   - `db/migrations/0003_srd_meta.sql`
+   - `db/migrations/0004_messages.sql`
+   - `db/migrations/0005_session_summary.sql`
+
+   If you have `psql` installed you can do the same from the terminal:
+   ```bash
+   export DB="postgresql://...your connection string from step 3..."
+   for f in db/schema.sql db/migrations/*.sql; do psql "$DB" -f "$f"; done
+   ```
+3. Get your **Database URL**. Click **Connect** at the top of the Supabase dashboard, choose **Session pooler**, copy the URI, and replace `[YOUR-PASSWORD]` with the password from step 1. It looks like:
+   ```
+   postgresql://postgres.abcdefghijkl:PASSWORD@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+   ```
+   (The "Direct connection" string also works, but only on networks with IPv6. Session pooler works everywhere.)
+
+---
+
+## Step 3 — Launch and fill in the setup screen
+
+```bash
 python launcher.py
 ```
 
-**Mac:** after the one-time install above, you can skip the terminal — just double-click `VirtualDM.app` in the `dm-server` folder. It starts the server (or opens the game if it's already running).
+Your browser opens `http://localhost:8080/setup`. Fill in:
+
+| Field | Required | Where to get it | What it's for |
+|---|---|---|---|
+| Anthropic API Key | Yes | [console.anthropic.com](https://console.anthropic.com) → API Keys | The DM's brain. |
+| OpenAI API Key | No | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | DM voice and scene/map art. Blank = system text-to-speech, no art. |
+| Database URL | Yes | Step 2, part 3 | Where all game state lives. |
+| Service Role Key | No | Supabase → Settings → API Keys → `service_role` | Not used yet. Leave blank. |
+| Default Campaign ID | No | Printed by Step 4 | Skips the campaign picker. Blank = pick each time. |
+| Player 1 / 2 name | No | — | Labels on the two chat boxes. Defaults: Jeff and Julee. |
+
+Click **Save & Start Playing**. Settings are saved to `~/.virtualdm/config.json` on your machine (readable only by you) and never sent anywhere. The server also generates a random *connector secret* for you; it only matters if you later hook the server up to claude.ai as an MCP connector, so there's nothing to do.
+
+**Mac:** from now on you can skip the terminal — double-click `VirtualDM.app` in the repo folder. It starts the server (or opens the game if it's already running).
+
+**Prefer a `.env` file?** Copy `.env.example` to `.env` in the repo folder and fill it in. It holds the same settings under their environment-variable names (`ANTHROPIC_API_KEY`, `SUPABASE_URL`, …). If both exist, `~/.virtualdm/config.json` wins.
 
 ---
 
-## First-time setup
+## Step 4 — Create your first campaign
 
-The setup screen (`http://localhost:8080/setup`) opens automatically on first run.
-
-Fill in:
-
-1. **Anthropic API Key** — from [console.anthropic.com](https://console.anthropic.com)
-2. **OpenAI API Key** — optional, from [platform.openai.com](https://platform.openai.com/api-keys)
-3. **Supabase Database URL** — `postgresql://postgres:PASSWORD@db.YOURREF.supabase.co:5432/postgres`
-4. **Supabase Service Role Key** — from your Supabase project → Settings → API
-5. **Player names** — defaults to Jeff and Julee. Change to whatever you want.
-
-Settings are saved to `~/.virtualdm/config.json` on your machine. Never transmitted anywhere.
-
-### Setting up Supabase
-
-1. Create a free account at [supabase.com](https://supabase.com)
-2. Create a new project (any region, any password)
-3. Go to Settings → Database → Connection string, copy the URI
-4. Go to Settings → API, copy the `service_role` key
-5. Apply the database schema (one-time setup, see below)
-
----
-
-## Database schema setup
-
-This is a one-time step. You need `psql` installed ([download](https://www.postgresql.org/download/)).
+In the same terminal (venv active, inside the repo folder):
 
 ```bash
-cd dm-server    # or wherever you cloned the repo
-
-export DB="postgresql://postgres:PASSWORD@db.YOURREF.supabase.co:5432/postgres"
-
-psql "$DB" -f db/schema.sql
-psql "$DB" -f db/migrations/0001_current_location.sql
-psql "$DB" -f db/migrations/0002_encounter_turn_init.sql
-psql "$DB" -f db/migrations/0003_srd_meta.sql
-psql "$DB" -f db/migrations/0004_messages.sql
-psql "$DB" -f db/migrations/0005_session_summary.sql
-```
-
----
-
-## Create your first campaign
-
-```bash
-# From the dm-server directory with venv active:
 PYTHONPATH=. python scripts/seed_campaign.py --name "Your Campaign Name" --edition 2014
-
-# Copy the printed DEFAULT_CAMPAIGN_ID into the setup screen
 ```
 
-This creates the campaign and seeds starter lore. Update the Campaign ID in the setup screen, then restart.
+The script reads your Database URL from the setup screen's config (or `.env`), creates the campaign with starter lore, and prints its ID. The campaign shows up in the picker right away. Optionally paste the ID into the setup screen as Default Campaign ID to skip the picker.
 
 ---
 
@@ -113,7 +99,7 @@ This creates the campaign and seeds starter lore. Update the Campaign ID in the 
 Characters must be set to **Public** on D&D Beyond.
 
 ```bash
-# Run from a laptop (cloud IPs are often blocked by D&D Beyond):
+# Run from your own computer (cloud IPs are often blocked by D&D Beyond). Reads the DB URL from your setup config.
 PYTHONPATH=. python scripts/import_ddb.py https://www.dndbeyond.com/characters/ID Player1Name \
   --campaign-id YOUR_CAMPAIGN_ID
 
@@ -145,7 +131,7 @@ Downloads ~900 entries from the D&D 5.1 System Reference Document (CC-BY-4.0).
 
 ## Playing
 
-1. Start the server: `python launcher.py` (Mac: double-click `VirtualDM.app`, or run the binary)
+1. Start the server: `python launcher.py` (Mac: double-click `VirtualDM.app`)
 2. Open `http://localhost:8080/ui` in your browser
 3. Select your campaign
 4. Click **Begin Session**

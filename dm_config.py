@@ -13,7 +13,7 @@ from pathlib import Path
 CONFIG_DIR = Path.home() / ".virtualdm"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
-REQUIRED_KEYS = ["anthropic_key", "supabase_url", "supabase_service_key", "connector_secret"]
+REQUIRED_KEYS = ["anthropic_key", "supabase_url", "connector_secret"]
 
 _ENV_MAP = {
     "anthropic_key": "ANTHROPIC_API_KEY",

@@ -13,6 +13,7 @@ import base64
 import inspect
 import json
 import os
+import secrets
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -39,7 +40,11 @@ _config.load()   # ~/.virtualdm/config.json → os.environ
 load_dotenv()    # .env fallback (dev)
 
 CONNECTOR_SECRET = os.environ.get("CONNECTOR_SECRET")
-if not CONNECTOR_SECRET or len(CONNECTOR_SECRET) < 24:
+if not CONNECTOR_SECRET:
+    # First run, nothing configured yet: use a throwaway so the /setup page can load.
+    # Saving the setup form writes a permanent secret to ~/.virtualdm/config.json.
+    CONNECTOR_SECRET = secrets.token_urlsafe(32)
+if len(CONNECTOR_SECRET) < 24:
     raise RuntimeError(
         "CONNECTOR_SECRET must be set and ≥24 chars (URL-safe, ≥32 random bytes recommended)."
     )
@@ -546,7 +551,6 @@ async def setup_handler(request: Request) -> Response:
                 "connector_secret", "default_campaign_id", "player1_name", "player2_name",
             ]}
             if not data.get("connector_secret"):
-                import secrets
                 data["connector_secret"] = secrets.token_urlsafe(32)
             _config.save(data)
             _config.load()  # re-apply to os.environ

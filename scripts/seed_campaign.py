@@ -19,6 +19,12 @@ import json
 import os
 import sys
 
+import dm_config
+from dotenv import load_dotenv
+
+dm_config.load()   # ~/.virtualdm/config.json (saved by the /setup screen)
+load_dotenv()      # .env fallback, same as the server
+
 
 STARTER_LORE = [
     {
@@ -76,7 +82,7 @@ async def _main() -> int:
     print(f"\nCampaign created: {args.name} ({args.edition})")
     print(f"DEFAULT_CAMPAIGN_ID={campaign_id}")
     print(f"\nNext steps:")
-    print(f"  1. Add to .env: DEFAULT_CAMPAIGN_ID={campaign_id}")
+    print(f"  1. (Optional) paste into the setup screen as Default Campaign ID: {campaign_id}")
     print(f"  2. Import Jeff's character:")
     print(f"     python scripts/import_ddb.py <ddb_url> Jeff --campaign-id {campaign_id}")
     print(f"  3. Import Julee's character:")

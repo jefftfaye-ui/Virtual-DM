@@ -121,13 +121,14 @@ h1 {
 
       <div class="field">
         <label for="supabase_url">Database URL <span style="color:var(--copper)">*</span></label>
-        <input type="text" id="supabase_url" name="supabase_url" value="" placeholder="postgresql://postgres:…@db.xxxx.supabase.co:5432/postgres" autocomplete="off" required>
+        <input type="text" id="supabase_url" name="supabase_url" value="" placeholder="postgresql://postgres.xxxx:PASSWORD@aws-0-us-east-1.pooler.supabase.com:5432/postgres" autocomplete="off" required>
+        <p class="hint">Supabase dashboard → <strong>Connect</strong> → Session pooler URI, with <code>[YOUR-PASSWORD]</code> replaced by your database password.</p>
       </div>
 
       <div class="field">
-        <label for="supabase_service_key">Service Role Key <span style="color:var(--copper)">*</span></label>
-        <input type="password" id="supabase_service_key" name="supabase_service_key" value="" placeholder="eyJhbGci…" autocomplete="off" required>
-        <p class="hint">Found in Supabase → Settings → API.</p>
+        <label for="supabase_service_key">Service Role Key</label>
+        <input type="password" id="supabase_service_key" name="supabase_service_key" value="" placeholder="eyJhbGci…" autocomplete="off">
+        <p class="hint">Optional — not used yet, safe to leave blank. Supabase → Settings → API Keys → <code>service_role</code>.</p>
       </div>
 
       <div class="field">
@@ -157,8 +158,8 @@ h1 {
 
   <div class="supabase-note">
     <strong>New to Supabase?</strong> Create a free account at <a href="https://supabase.com" target="_blank">supabase.com</a>,
-    create a project, run <code>db/schema.sql</code> and the migrations in <code>db/migrations/</code>,
-    then paste your connection string and service key above.
+    create a project, paste <code>db/schema.sql</code> and each file in <code>db/migrations/</code> (in order) into the SQL Editor,
+    then paste your connection string above.
     The free tier is enough for years of play.
   </div>
 </div>
